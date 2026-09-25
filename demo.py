@@ -1,5 +1,6 @@
 ﻿"""Run the roadmap math for one sample renter. Change the numbers and run: python demo.py"""
 
+import home_values as hv
 from finance import (
     LEVELS, PROGRAMS, Assumptions, Debt, affordable_price, cash_to_close, debt_payoff_to_qualify,
     monthly_housing_cost, monthly_saving_needed, months_to_save,
@@ -67,3 +68,18 @@ for m in (12, 24, 36):
         r = affordable_price(income, debts, savings, monthly_saving, m, down_pct, program, a, level)
         row += f"{'$' + format(r['price'], ',.0f') + ' (' + r['limited_by'] + ')':>28}"
     print(f"   In {m} months:{row}")
+
+# ----- Where could they buy? -----
+county = "Tarrant County"
+homes = hv.load()
+print(f"\nTypical home values in {county} (as of {homes['as_of'].iloc[0]}), "
+      f"budget after 24 months:")
+for level in LEVELS:
+    budget = affordable_price(income, debts, savings, monthly_saving, 24, down_pct, program,
+                              a, level)["price"]
+    area = hv.with_affordability(hv.zips_in(homes, county=county), budget)
+    within = area[area["within_budget"]]
+    print(f"   {level.capitalize()} (${budget:,.0f}): {len(within)} of {len(area)} ZIPs")
+    for _, z in within.tail(3).iterrows():
+        print(f"      {z['zip']}  {z['city']:<18} ${z['typical_value']:>9,.0f}")
+print(f"\n{hv.SOURCE_NOTE}")
