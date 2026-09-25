@@ -1,7 +1,7 @@
-"""Run the roadmap math for one sample renter. Change the numbers and run: python demo.py"""
+﻿"""Run the roadmap math for one sample renter. Change the numbers and run: python demo.py"""
 
 from finance import (
-    PROGRAMS, Assumptions, Debt, affordable_price, cash_to_close, debt_payoff_to_qualify,
+    LEVELS, PROGRAMS, Assumptions, Debt, affordable_price, cash_to_close, debt_payoff_to_qualify,
     monthly_housing_cost, monthly_saving_needed, months_to_save,
 )
 
@@ -34,27 +34,36 @@ for item, amount in cost.items():
         print(f"   {item.replace('_', ' '):<20} ${amount:>8,.0f}")
 print(f"   {'vs. rent':<20} ${rent:>8,.0f}\n")
 
-plan = debt_payoff_to_qualify(income, debts, target_price, down_pct, program, a)
-print(f"DTI: front {plan.front_dti:.1%} (limit {program.max_front_dti:.0%}), "
-      f"back {plan.back_dti_before:.1%} (limit {program.max_back_dti:.0%})")
-if plan.qualifies_now:
-    print("   -> Qualifies on income and debts today.\n")
-elif not plan.fixable_by_paying_debt:
-    print("   -> The house payment alone is over the limit. Paying off debt won't fix it;"
-          " look at a lower price or a bigger down payment.\n")
-else:
-    names = ", ".join(d.name for d in plan.debts_to_pay_off)
-    print(f"   -> Pay off {names} (${plan.cash_needed:,.0f}) to bring back-end DTI to "
-          f"{plan.back_dti_after:.1%}.\n")
+for level in LEVELS:
+    limits = program.limits(level)
+    plan = debt_payoff_to_qualify(income, debts, target_price, down_pct, program, a, level)
+    print(f"{level.upper()} limits: front {plan.front_dti:.1%} (limit {limits.front:.1%}), "
+          f"back {plan.back_dti_before:.1%} (limit {limits.back:.1%})")
+    if plan.qualifies_now:
+        print("   -> Qualifies on income and debts today.")
+    elif not plan.fixable_by_paying_debt:
+        print("   -> The house payment alone is over the limit. Paying off debt won't fix it;"
+              " look at a lower price or a bigger down payment.")
+    else:
+        names = ", ".join(d.name for d in plan.debts_to_pay_off)
+        print(f"   -> Pay off {names} (${plan.cash_needed:,.0f}) to bring back-end DTI to "
+              f"{plan.back_dti_after:.1%}.")
 
-need = cash_to_close(target_price, down_pct, a) + plan.cash_needed
-months = months_to_save(need, savings, monthly_saving)
-print(f"Cash needed: ${need:,.0f} (down payment + closing costs"
-      f"{' + debt payoff' if plan.cash_needed else ''})")
-print(f"   Saving ${monthly_saving:,.0f}/month from ${savings:,.0f}: {months} months")
-print(f"   To get there in 24 months: save ${monthly_saving_needed(need, savings, 24):,.0f}/month\n")
+    if plan.fixable_by_paying_debt:
+        need = cash_to_close(target_price, down_pct, a) + plan.cash_needed
+        months = months_to_save(need, savings, monthly_saving)
+        print(f"   Cash needed: ${need:,.0f} (down payment + closing costs"
+              f"{' + debt payoff' if plan.cash_needed else ''})")
+        print(f"   Saving ${monthly_saving:,.0f}/month from ${savings:,.0f}: {months} months")
+        print(f"   To get there in 24 months: save "
+              f"${monthly_saving_needed(need, savings, 24):,.0f}/month")
+    print()
 
-print("What can I afford if I keep saving?")
+print(f"What can I afford if I keep saving ${monthly_saving:,.0f}/month?")
+print(f"   {'':<14}{'Comfortable':>28}{'Maximum':>28}")
 for m in (12, 24, 36):
-    r = affordable_price(income, debts, savings, monthly_saving, m, down_pct, program, a)
-    print(f"   In {m} months: ${r['price']:,.0f}  (limited by {r['limited_by']})")
+    row = ""
+    for level in LEVELS:
+        r = affordable_price(income, debts, savings, monthly_saving, m, down_pct, program, a, level)
+        row += f"{'$' + format(r['price'], ',.0f') + ' (' + r['limited_by'] + ')':>28}"
+    print(f"   In {m} months:{row}")

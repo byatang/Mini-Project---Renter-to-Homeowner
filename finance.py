@@ -18,28 +18,42 @@ class Debt:
 
 
 @dataclass
+class DtiLimits:
+    front: float  # housing cost / gross income
+    back: float   # (housing cost + debts) / gross income
+
+
+@dataclass
 class LoanProgram:
     """Lender rules for one kind of mortgage."""
     name: str
     min_down_pct: float        # smallest down payment allowed
-    max_front_dti: float       # housing cost / gross income
-    max_back_dti: float        # (housing cost + debts) / gross income
+    comfortable: DtiLimits     # classic underwriting guidelines
+    maximum: DtiLimits         # what automated underwriting typically approves
     mortgage_insurance: float  # yearly rate, as a share of the loan
     mi_always: bool            # FHA charges it at any down payment; conventional only under 20%
 
+    def limits(self, level):
+        """level is "comfortable" or "maximum"."""
+        return getattr(self, level)
 
-# Classic underwriting guidelines. Automated underwriting can approve higher
-# DTIs, so these are "comfortable" limits, not hard maximums.
+
+LEVELS = ("comfortable", "maximum")
+
+# Conventional max: Fannie Mae DU allows up to 50% total DTI with no separate
+# housing-only limit. FHA max: 46.9% / 56.9% with automated approval.
 PROGRAMS = {
-    "Conventional": LoanProgram("Conventional", 0.03, 0.28, 0.36, 0.006, mi_always=False),
-    "FHA": LoanProgram("FHA", 0.035, 0.31, 0.43, 0.0055, mi_always=True),
+    "Conventional": LoanProgram("Conventional", 0.03, DtiLimits(0.28, 0.36),
+                                DtiLimits(0.50, 0.50), 0.006, mi_always=False),
+    "FHA": LoanProgram("FHA", 0.035, DtiLimits(0.31, 0.43),
+                       DtiLimits(0.469, 0.569), 0.0055, mi_always=True),
 }
 
 
 @dataclass
 class Assumptions:
     """Market assumptions. Defaults are rough DFW figures; the user can change any of them."""
-    interest_rate: float = 0.065
+    interest_rate: float = 0.065       # placeholder until the user confirms a current rate
     loan_years: int = 30
     property_tax_rate: float = 0.022   # Texas has no income tax, so property tax runs high
     insurance_rate: float = 0.010      # homeowners insurance per year, as a share of price
@@ -105,24 +119,26 @@ class PayoffPlan:
     back_dti_after: float = 0.0
 
 
-def debt_payoff_to_qualify(gross_monthly_income, debts, price, down_pct, program, a=Assumptions()):
+def debt_payoff_to_qualify(gross_monthly_income, debts, price, down_pct, program,
+                           a=Assumptions(), level="comfortable"):
     """Which debts to pay off (and how much cash that takes) to qualify for this price.
 
     Pays off whole debts, starting with the ones that free up the most monthly
     payment per dollar of balance (usually credit cards and nearly-done car loans).
     """
+    limits = program.limits(level)
     housing = monthly_housing_cost(price, down_pct, program, a)["total"]
     front, back = dti(gross_monthly_income, housing, debts)
-    front_ok = front <= program.max_front_dti + TOLERANCE
+    front_ok = front <= limits.front + TOLERANCE
     plan = PayoffPlan(
-        qualifies_now=front_ok and back <= program.max_back_dti + TOLERANCE,
+        qualifies_now=front_ok and back <= limits.back + TOLERANCE,
         fixable_by_paying_debt=front_ok,
         front_dti=front, back_dti_before=back, back_dti_after=back,
     )
     if plan.qualifies_now or not plan.fixable_by_paying_debt:
         return plan
 
-    allowed_debt_payments = program.max_back_dti * gross_monthly_income - housing
+    allowed_debt_payments = limits.back * gross_monthly_income - housing
     remaining = list(debts)
     by_relief = sorted(debts, key=lambda d: d.monthly_payment / max(d.balance, 1), reverse=True)
     for debt in by_relief:
@@ -160,10 +176,12 @@ def monthly_saving_needed(target, current_savings, months):
 
 # ---------- How much house ----------
 
-def max_price_by_income(gross_monthly_income, debts, down_pct, program, a=Assumptions()):
+def max_price_by_income(gross_monthly_income, debts, down_pct, program, a=Assumptions(),
+                        level="comfortable"):
     """Highest price whose monthly cost fits under both DTI limits."""
-    budget = min(program.max_front_dti * gross_monthly_income,
-                 program.max_back_dti * gross_monthly_income - total_debt_payments(debts))
+    limits = program.limits(level)
+    budget = min(limits.front * gross_monthly_income,
+                 limits.back * gross_monthly_income - total_debt_payments(debts))
     # Every cost except HOA scales with price, so cost = price * per_dollar + hoa.
     per_dollar = monthly_housing_cost(1.0, down_pct, program, replace(a, hoa_monthly=0.0))["total"]
     return max(0.0, (budget - a.hoa_monthly) / per_dollar)
@@ -175,12 +193,12 @@ def max_price_by_cash(cash_available, down_pct, a=Assumptions()):
 
 
 def affordable_price(gross_monthly_income, debts, current_savings, monthly_saving, months,
-                     down_pct, program, a=Assumptions()):
+                     down_pct, program, a=Assumptions(), level="comfortable"):
     """What price is reachable after saving for `months`, and what is holding it back."""
     if down_pct < program.min_down_pct:
         raise ValueError(f"{program.name} needs at least {program.min_down_pct:.1%} down")
     cash = current_savings + monthly_saving * months
-    by_income = max_price_by_income(gross_monthly_income, debts, down_pct, program, a)
+    by_income = max_price_by_income(gross_monthly_income, debts, down_pct, program, a, level)
     by_cash = max_price_by_cash(cash, down_pct, a)
     return {
         "cash_at_purchase": cash,

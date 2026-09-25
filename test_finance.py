@@ -1,7 +1,7 @@
 import pytest
 
 from finance import (
-    PROGRAMS, Assumptions, Debt, affordable_price, cash_to_close, debt_payoff_to_qualify,
+    LEVELS, PROGRAMS, Assumptions, Debt, affordable_price, cash_to_close, debt_payoff_to_qualify,
     dti, max_price_by_cash, max_price_by_income, monthly_housing_cost,
     monthly_principal_interest, monthly_saving_needed, months_to_save,
 )
@@ -31,11 +31,21 @@ def test_dti():
     assert back == pytest.approx(0.30)
 
 
-def test_max_price_by_income_hits_the_limit_exactly():
+@pytest.mark.parametrize("program", [CONV, FHA])
+@pytest.mark.parametrize("level", LEVELS)
+def test_max_price_by_income_hits_the_limit_exactly(program, level):
     income, debts, a = 6000, [Debt("car", 400, 12_000)], Assumptions(hoa_monthly=50)
-    price = max_price_by_income(income, debts, 0.05, CONV, a)
-    front, back = dti(income, monthly_housing_cost(price, 0.05, CONV, a)["total"], debts)
-    assert max(front / CONV.max_front_dti, back / CONV.max_back_dti) == pytest.approx(1.0)
+    limits = program.limits(level)
+    price = max_price_by_income(income, debts, 0.05, program, a, level)
+    front, back = dti(income, monthly_housing_cost(price, 0.05, program, a)["total"], debts)
+    assert max(front / limits.front, back / limits.back) == pytest.approx(1.0)
+
+
+def test_maximum_allows_more_house_than_comfortable():
+    for program in (CONV, FHA):
+        comfortable = max_price_by_income(6000, [], 0.05, program, level="comfortable")
+        maximum = max_price_by_income(6000, [], 0.05, program, level="maximum")
+        assert maximum > comfortable
 
 
 def test_payoff_picks_most_relief_per_dollar_first():
@@ -48,7 +58,7 @@ def test_payoff_picks_most_relief_per_dollar_first():
     assert not plan.qualifies_now
     assert [d.name for d in plan.debts_to_pay_off] == ["card"]
     assert plan.cash_needed == 8_000
-    assert plan.back_dti_after <= CONV.max_back_dti
+    assert plan.back_dti_after <= CONV.comfortable.back
 
 
 def test_house_exactly_at_the_limit_qualifies():
