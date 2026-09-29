@@ -21,8 +21,8 @@ This note must always be visible on screen, word for word:
   costs more than the deposit gains you"), not generic advice.
 - A check compares every number the model cites against the values the code calculated, and
   flags any mismatch on screen.
-- Never pull credit reports (all debts are entered by hand or come from the fictional renters
-  file). Never scrape listing sites.
+- Never pull credit reports (all debts come from the fictional renters file). Never scrape
+  listing sites.
 
 ## Assumptions and rates
 - Lender thresholds and market assumptions are named constants in `finance.py` (`PROGRAMS`,
@@ -37,25 +37,28 @@ From the project folder, in the VS Code terminal (with `(.venv)` showing):
 ```
 pip install -r requirements.txt   # first time only
 python -m pytest                  # run all tests
-python demo.py                    # sample renter, printed in the terminal
+python demo.py                    # the four renters, printed in the terminal
 python home_values.py             # refresh DFW home values from Zillow (monthly)
 ```
 
 ## File structure
 ```
-finance.py                  DTI, payments, debt payoff, savings, affordability (all the math)
-home_values.py              Zillow ZHVI download + DFW ZIP lookups
+finance.py                    all the math; named constants at the top
+renters.py                    loads the renters, analyze() runs both paths per renter
+data/renters.json             the four fictional renters (edit here, not in code)
+home_values.py                Zillow ZHVI download + DFW ZIP lookups
 data/dfw_zip_home_values.csv  254 DFW ZIPs, typical home value + 1-year change
-demo.py                     terminal walkthrough of one sample renter
-test_finance.py             tests for finance.py
-test_home_values.py         tests for home_values.py
-requirements.txt            Python packages
-HANDOFF.md                  what's built, what's not, next steps
+demo.py                       terminal walkthrough of the four renters
+test_finance.py, test_renters.py, test_home_values.py   tests
+requirements.txt              Python packages
+HANDOFF.md                    what's built, what's not, next steps
 ```
 
-## Stack
-Python 3.14 in `.venv`, pandas, pytest. The course recommends Streamlit for the app (not
-installed yet).
+## Stack and decisions
+Python 3.14 in `.venv`, pandas, pytest. Streamlit for the app. Google AI Studio (Gemini, free
+tier) for the model. Live mortgage rate from FRED `MORTGAGE30US`. API keys go in `.env`
+(git-ignored) and are never pasted in chat. The app shows only the four fictional renters,
+with no typed-in user numbers.
 
 ## Working with this user
 - Business analytics grad student with a real estate background, new to coding, on Windows.

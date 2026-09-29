@@ -1,85 +1,36 @@
-﻿"""Run the roadmap math for one sample renter. Change the numbers and run: python demo.py"""
+"""Walk through the four fictional renters in the terminal: python demo.py
+
+Every number here is calculated by code. The debt-first vs. deposit-first decision
+itself is left to the model (added in a later step).
+"""
 
 import home_values as hv
-from finance import (
-    LEVELS, PROGRAMS, Assumptions, Debt, affordable_price, cash_to_close, debt_payoff_to_qualify,
-    monthly_housing_cost, monthly_saving_needed, months_to_save,
-)
+from finance import DEFAULT_LEVEL, Assumptions
+from renters import analyze, load_renters
 
-# ----- The renter (typed in by the user) -----
-annual_income = 72_000
-rent = 1_850
-savings = 8_000
-debts = [
-    Debt("Car loan", monthly_payment=450, balance=15_000),
-    Debt("Credit card", monthly_payment=150, balance=5_000),
-    Debt("Student loan", monthly_payment=250, balance=25_000),
-]
-monthly_saving = 500
-
-# ----- The home they want -----
-target_price = 250_000
-down_pct = 0.035
-program = PROGRAMS["FHA"]
 a = Assumptions()
-
-income = annual_income / 12
-
-print(f"Monthly gross income: ${income:,.0f}   Rent: ${rent:,.0f}\n")
-
-cost = monthly_housing_cost(target_price, down_pct, program, a)
-print(f"A ${target_price:,.0f} home ({program.name}, {down_pct:.1%} down) costs about "
-      f"${cost['total']:,.0f}/month:")
-for item, amount in cost.items():
-    if item != "total":
-        print(f"   {item.replace('_', ' '):<20} ${amount:>8,.0f}")
-print(f"   {'vs. rent':<20} ${rent:>8,.0f}\n")
-
-for level in LEVELS:
-    limits = program.limits(level)
-    plan = debt_payoff_to_qualify(income, debts, target_price, down_pct, program, a, level)
-    print(f"{level.upper()} limits: front {plan.front_dti:.1%} (limit {limits.front:.1%}), "
-          f"back {plan.back_dti_before:.1%} (limit {limits.back:.1%})")
-    if plan.qualifies_now:
-        print("   -> Qualifies on income and debts today.")
-    elif not plan.fixable_by_paying_debt:
-        print("   -> The house payment alone is over the limit. Paying off debt won't fix it;"
-              " look at a lower price or a bigger down payment.")
-    else:
-        names = ", ".join(d.name for d in plan.debts_to_pay_off)
-        print(f"   -> Pay off {names} (${plan.cash_needed:,.0f}) to bring back-end DTI to "
-              f"{plan.back_dti_after:.1%}.")
-
-    if plan.fixable_by_paying_debt:
-        need = cash_to_close(target_price, down_pct, a) + plan.cash_needed
-        months = months_to_save(need, savings, monthly_saving)
-        print(f"   Cash needed: ${need:,.0f} (down payment + closing costs"
-              f"{' + debt payoff' if plan.cash_needed else ''})")
-        print(f"   Saving ${monthly_saving:,.0f}/month from ${savings:,.0f}: {months} months")
-        print(f"   To get there in 24 months: save "
-              f"${monthly_saving_needed(need, savings, 24):,.0f}/month")
-    print()
-
-print(f"What can I afford if I keep saving ${monthly_saving:,.0f}/month?")
-print(f"   {'':<14}{'Comfortable':>28}{'Maximum':>28}")
-for m in (12, 24, 36):
-    row = ""
-    for level in LEVELS:
-        r = affordable_price(income, debts, savings, monthly_saving, m, down_pct, program, a, level)
-        row += f"{'$' + format(r['price'], ',.0f') + ' (' + r['limited_by'] + ')':>28}"
-    print(f"   In {m} months:{row}")
-
-# ----- Where could they buy? -----
-county = "Tarrant County"
 homes = hv.load()
-print(f"\nTypical home values in {county} (as of {homes['as_of'].iloc[0]}), "
-      f"budget after 24 months:")
-for level in LEVELS:
-    budget = affordable_price(income, debts, savings, monthly_saving, 24, down_pct, program,
-                              a, level)["price"]
-    area = hv.with_affordability(hv.zips_in(homes, county=county), budget)
-    within = area[area["within_budget"]]
-    print(f"   {level.capitalize()} (${budget:,.0f}): {len(within)} of {len(area)} ZIPs")
-    for _, z in within.tail(3).iterrows():
-        print(f"      {z['zip']}  {z['city']:<18} ${z['typical_value']:>9,.0f}")
-print(f"\n{hv.SOURCE_NOTE}")
+print(f"Mortgage rate {a.interest_rate:.2%} | planning against {DEFAULT_LEVEL} DTI limits\n")
+
+for r in load_renters():
+    x = analyze(r, a)
+    lim = x["limits"]
+    print(f"=== {r.name}: {r.story}")
+    print(f"    {r.income_type} income ${r.annual_income:,.0f}/yr "
+          f"(lender counts ${x['qualifying_monthly_income']:,.0f}/mo) | rent ${r.rent:,.0f} | "
+          f"saved ${r.savings:,.0f} | extra ${r.extra_per_month:,.0f}/mo | goal: {r.goal}")
+    for d in r.debts:
+        print(f"    {d.name}: ${d.balance:,.0f} at {d.apr:.2%}, ${d.monthly_payment:,.0f}/mo")
+    print(f"    Target: ${r.target_price:,.0f} in {r.county} ({r.program}, {r.down_pct:.1%} down) "
+          f"-> ${x['housing_cost']['total']:,.0f}/mo, ${x['cash_to_close']:,.0f} to close")
+    print(f"    DTI today: {x['front_dti_today']:.1%} housing / {x['back_dti_today']:.1%} total "
+          f"(limits {lim.front:.0%} / {lim.back:.0%})")
+    for name, p in x["paths"].items():
+        when = f"buys in {p.months_to_buy} months" if p.months_to_buy is not None else "can't buy in 10 yrs"
+        print(f"    {name:<14} {when:<18} debt interest ${p.total_debt_interest:>6,.0f} | "
+              f"DTI at purchase {p.back_dti_at_purchase:.1%} | debt left ${p.debt_left_at_purchase:,.0f}")
+    area = hv.with_affordability(hv.zips_in(homes, county=r.county), r.target_price)
+    print(f"    {area['within_budget'].sum()} of {len(area)} {r.county} ZIPs have a typical home "
+          f"at or under ${r.target_price:,.0f}\n")
+
+print(hv.SOURCE_NOTE)

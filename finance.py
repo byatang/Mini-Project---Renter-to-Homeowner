@@ -9,12 +9,21 @@ import math
 from dataclasses import dataclass, field, replace
 
 
+# ---------- Named constants: change these, not the formulas ----------
+
+DEFAULT_MORTGAGE_RATE = 0.065  # fallback when the live FRED rate is unavailable (user's placeholder)
+SAVINGS_APY = 0.035            # what the deposit fund earns in a high-yield savings account
+DEFAULT_LEVEL = "comfortable"  # which DTI limits the renter walkthroughs plan against
+MAX_MONTHS = 120               # stop projecting after 10 years
+
+
 @dataclass
 class Debt:
-    """A debt the user types in (we never pull a credit report)."""
+    """A debt entered by hand (we never pull a credit report)."""
     name: str
     monthly_payment: float
     balance: float
+    apr: float = 0.0           # yearly interest rate, e.g. 0.2499 for 24.99%
 
 
 @dataclass
@@ -53,7 +62,7 @@ PROGRAMS = {
 @dataclass
 class Assumptions:
     """Market assumptions. Defaults are rough DFW figures; the user can change any of them."""
-    interest_rate: float = 0.065       # placeholder until the user confirms a current rate
+    interest_rate: float = DEFAULT_MORTGAGE_RATE
     loan_years: int = 30
     property_tax_rate: float = 0.022   # Texas has no income tax, so property tax runs high
     insurance_rate: float = 0.010      # homeowners insurance per year, as a share of price
@@ -207,3 +216,106 @@ def affordable_price(gross_monthly_income, debts, current_savings, monthly_savin
         "price": min(by_income, by_cash),
         "limited_by": "income/debts" if by_income < by_cash else "savings",
     }
+
+
+# ---------- Income ----------
+
+def qualifying_monthly_income(annual_income, income_type="salaried", prior_year_income=None):
+    """Income a lender would count. Variable income (commission, gig, self-employed) is
+    averaged over two years, or the current year if income is falling."""
+    if income_type == "variable" and prior_year_income is not None:
+        return min(annual_income, (annual_income + prior_year_income) / 2) / 12
+    return annual_income / 12
+
+
+# ---------- Debt first vs. deposit first, month by month ----------
+
+STRATEGIES = ("debt_first", "deposit_first")
+PAID_OFF = 0.005  # balances under half a cent count as paid off
+
+
+@dataclass
+class PathResult:
+    strategy: str
+    months_to_buy: int | None      # None = can't buy within MAX_MONTHS
+    debt_interest_paid: float      # interest paid on debts until purchase
+    savings_interest_earned: float
+    savings_at_purchase: float
+    debt_left_at_purchase: float
+    back_dti_at_purchase: float
+    monthly: list                  # one dict per month: the projection table
+    debt_interest_after_purchase: float = 0.0  # on debt still owed, paid at its minimum
+
+    @property
+    def total_debt_interest(self):
+        """Interest on today's debts from now until they are gone. Compare paths on this."""
+        return self.debt_interest_paid + self.debt_interest_after_purchase
+
+
+def interest_to_pay_off(balance, apr, monthly_payment, max_months=600):
+    """Interest paid if a balance is paid at a fixed monthly payment until it's gone."""
+    interest_total = 0.0
+    for _ in range(max_months):
+        if balance <= PAID_OFF:
+            break
+        interest = balance * apr / 12
+        interest_total += interest
+        balance += interest - min(monthly_payment, balance + interest)
+    return interest_total
+
+
+def project_path(strategy, monthly_income, debts, savings, extra_per_month, price, down_pct,
+                 program, a=Assumptions(), level=DEFAULT_LEVEL, savings_apy=SAVINGS_APY,
+                 max_months=MAX_MONTHS):
+    """Simulate one strategy month by month until the renter can buy.
+
+    Every month each debt charges interest and gets its minimum payment. The renter's
+    extra cash (plus any payment freed up by a paid-off debt) goes to:
+      debt_first    -> the highest-APR debt until it is gone, then savings
+      deposit_first -> savings
+    They can buy once savings cover the deposit + closing costs AND DTI is within limits.
+    """
+    if strategy not in STRATEGIES:
+        raise ValueError(f"strategy must be one of {STRATEGIES}")
+    limits = program.limits(level)
+    need = cash_to_close(price, down_pct, a)
+    housing = monthly_housing_cost(price, down_pct, program, a)["total"]
+    balances = {d.name: d.balance for d in debts}
+    focus = max(debts, key=lambda d: d.apr) if strategy == "debt_first" and debts else None
+    debt_interest = savings_interest = 0.0
+    rows = []
+
+    for month in range(max_months + 1):
+        payments = sum(d.monthly_payment for d in debts if balances[d.name] > PAID_OFF)
+        front, back = dti(monthly_income, housing, [Debt("all", payments, 0)])
+        rows.append({"month": month, "savings": savings, "debt_balance": sum(balances.values()),
+                     "debt_interest_paid": debt_interest, "back_dti": back})
+        if (savings >= need and front <= limits.front + TOLERANCE
+                and back <= limits.back + TOLERANCE):
+            after = sum(interest_to_pay_off(balances[d.name], d.apr, d.monthly_payment)
+                        for d in debts)
+            return PathResult(strategy, month, debt_interest, savings_interest, savings,
+                              sum(balances.values()), back, rows, after)
+        if month == max_months:
+            break
+
+        cash = extra_per_month
+        for d in debts:
+            if balances[d.name] <= PAID_OFF:
+                cash += d.monthly_payment          # paid off: its payment is now free cash
+                continue
+            interest = balances[d.name] * d.apr / 12
+            debt_interest += interest
+            paid = min(d.monthly_payment, balances[d.name] + interest)
+            balances[d.name] += interest - paid
+            cash += d.monthly_payment - paid       # last payment can be smaller than usual
+        if focus and balances[focus.name] > PAID_OFF:
+            to_debt = min(cash, balances[focus.name])
+            balances[focus.name] -= to_debt
+            cash -= to_debt
+        growth = savings * savings_apy / 12
+        savings_interest += growth
+        savings += growth + cash
+
+    return PathResult(strategy, None, debt_interest, savings_interest, savings,
+                      sum(balances.values()), back, rows)

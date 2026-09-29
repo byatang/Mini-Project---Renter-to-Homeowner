@@ -1,0 +1,80 @@
+[
+  {
+    "id": "maya",
+    "name": "Maya",
+    "story": "Dental hygienist in Fort Worth. Carries a credit card balance from a move two years ago, plus a car loan.",
+    "income_type": "salaried",
+    "annual_income": 68000,
+    "prior_year_income": null,
+    "rent": 1650,
+    "savings": 9000,
+    "extra_per_month": 600,
+    "goal": "buy_sooner",
+    "county": "Tarrant County",
+    "target_price": 190000,
+    "program": "FHA",
+    "down_pct": 0.035,
+    "debts": [
+      {"name": "Credit card", "balance": 9000, "monthly_payment": 270, "apr": 0.2699},
+      {"name": "Car loan", "balance": 16000, "monthly_payment": 450, "apr": 0.069}
+    ]
+  },
+  {
+    "id": "jordan",
+    "name": "Jordan",
+    "story": "Software QA analyst in Garland. Only debt is a low-rate federal student loan.",
+    "income_type": "salaried",
+    "annual_income": 90000,
+    "prior_year_income": null,
+    "rent": 1750,
+    "savings": 14000,
+    "extra_per_month": 900,
+    "goal": "buy_sooner",
+    "county": "Dallas County",
+    "target_price": 225000,
+    "program": "Conventional",
+    "down_pct": 0.05,
+    "debts": [
+      {"name": "Student loan", "balance": 32000, "monthly_payment": 330, "apr": 0.045}
+    ]
+  },
+  {
+    "id": "priya",
+    "name": "Priya",
+    "story": "Commission-based real estate agent in Arlington. Income is rising but varies month to month.",
+    "income_type": "variable",
+    "annual_income": 98000,
+    "prior_year_income": 84000,
+    "rent": 1800,
+    "savings": 11000,
+    "extra_per_month": 700,
+    "goal": "better_rate",
+    "county": "Tarrant County",
+    "target_price": 230000,
+    "program": "Conventional",
+    "down_pct": 0.05,
+    "debts": [
+      {"name": "Car loan", "balance": 12000, "monthly_payment": 380, "apr": 0.079}
+    ]
+  },
+  {
+    "id": "marcus",
+    "name": "Marcus",
+    "story": "Freelance video editor in Dallas. Income dipped this year after a big client left.",
+    "income_type": "variable",
+    "annual_income": 62000,
+    "prior_year_income": 68000,
+    "rent": 1450,
+    "savings": 5000,
+    "extra_per_month": 500,
+    "goal": "better_rate",
+    "county": "Dallas County",
+    "target_price": 170000,
+    "program": "FHA",
+    "down_pct": 0.035,
+    "debts": [
+      {"name": "Credit card", "balance": 3200, "monthly_payment": 96, "apr": 0.199},
+      {"name": "Student loan", "balance": 18000, "monthly_payment": 200, "apr": 0.055}
+    ]
+  }
+]
