@@ -20,7 +20,11 @@ This note must always be visible on screen, word for word:
 - The model's explanation must cite the specific numbers in front of it (e.g. "at 22% the card
   costs more than the deposit gains you"), not generic advice.
 - A check compares every number the model cites against the values the code calculated, and
-  flags any mismatch on screen.
+  flags any mismatch on screen. Matches must be exact (31% = 31.0%, but 27% != 26.99%).
+- The model sees only `advisor.fact_sheet()`. Fact labels contain no digits, and the code
+  pre-calculates the differences between the paths so the model never subtracts.
+- Models are tried in order (`GEMINI_MODELS`); free-tier models are often overloaded (503).
+  If all fail, the app shows "AI explanation unavailable" instead of breaking.
 - Never pull credit reports (all debts come from the fictional renters file). Never scrape
   listing sites.
 
@@ -48,6 +52,7 @@ python home_values.py             # refresh DFW home values from Zillow (monthly
 finance.py                    all the math; named constants at the top
 renters.py                    loads the renters, analyze() runs both paths per renter
 data/renters.json             the four fictional renters (edit here, not in code)
+advisor.py                    fact sheet -> Gemini decision -> number check (python advisor.py)
 rates.py                      live FRED mortgage rate, silent fallback to the default
 check_keys.py                 confirms the API keys work without printing them
 home_values.py                Zillow ZHVI download + DFW ZIP lookups
