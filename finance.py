@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 # ---------- Named constants: change these, not the formulas ----------
 
 DEFAULT_MORTGAGE_RATE = 0.065  # fallback when the live FRED rate is unavailable (user's placeholder)
+DEFAULT_RATE_AS_OF = "2026-09-25"  # when the placeholder was set
 SAVINGS_APY = 0.035            # what the deposit fund earns in a high-yield savings account
 DEFAULT_LEVEL = "comfortable"  # which DTI limits the renter walkthroughs plan against
 MAX_MONTHS = 120               # stop projecting after 10 years
