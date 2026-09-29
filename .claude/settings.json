@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Glob|Grep|Bash|PowerShell",
+        "hooks": [
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/project_only.py\"" },
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect_env.py\"" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/run_tests.py\"", "timeout": 120 }
+        ]
+      }
+    ]
+  }
+}
