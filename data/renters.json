@@ -2,9 +2,9 @@
   {
     "id": "maya",
     "name": "Maya",
-    "story": "Dental hygienist in Fort Worth. Carries a credit card balance from a move two years ago, plus a car loan.",
+    "story": "Dental hygienist in Fort Worth. Carries a credit card balance from a move and a medical bill, plus a car loan.",
     "income_type": "salaried",
-    "annual_income": 68000,
+    "annual_income": 78000,
     "prior_year_income": null,
     "rent": 1650,
     "savings": 9000,
@@ -15,8 +15,8 @@
     "program": "FHA",
     "down_pct": 0.035,
     "debts": [
-      {"name": "Credit card", "balance": 9000, "monthly_payment": 270, "apr": 0.2699},
-      {"name": "Car loan", "balance": 16000, "monthly_payment": 450, "apr": 0.069}
+      {"name": "Credit card", "balance": 15000, "monthly_payment": 450, "apr": 0.2699},
+      {"name": "Car loan", "balance": 25000, "monthly_payment": 700, "apr": 0.069}
     ]
   },
   {
@@ -24,14 +24,14 @@
     "name": "Jordan",
     "story": "Software QA analyst in Garland. Only debt is a low-rate federal student loan.",
     "income_type": "salaried",
-    "annual_income": 90000,
+    "annual_income": 95000,
     "prior_year_income": null,
     "rent": 1750,
     "savings": 14000,
     "extra_per_month": 900,
     "goal": "buy_sooner",
     "county": "Dallas County",
-    "target_price": 225000,
+    "target_price": 210000,
     "program": "Conventional",
     "down_pct": 0.05,
     "debts": [
@@ -50,7 +50,7 @@
     "extra_per_month": 700,
     "goal": "better_rate",
     "county": "Tarrant County",
-    "target_price": 230000,
+    "target_price": 205000,
     "program": "Conventional",
     "down_pct": 0.05,
     "debts": [
@@ -62,14 +62,14 @@
     "name": "Marcus",
     "story": "Freelance video editor in Dallas. Income dipped this year after a big client left.",
     "income_type": "variable",
-    "annual_income": 62000,
-    "prior_year_income": 68000,
+    "annual_income": 72000,
+    "prior_year_income": 78000,
     "rent": 1450,
     "savings": 5000,
     "extra_per_month": 500,
     "goal": "better_rate",
     "county": "Dallas County",
-    "target_price": 170000,
+    "target_price": 175000,
     "program": "FHA",
     "down_pct": 0.035,
     "debts": [

@@ -31,6 +31,8 @@ This note must always be visible on screen, word for word:
 - Mortgage rate: hardcoded default of **6.5%** (the user's placeholder). An optional live rate
   may come from FRED series `MORTGAGE30US` (free API key). If the live call fails, fall back to
   the hardcoded rate silently. Always show which rate is in use and its date.
+- The live rate moves weekly, so the four renters are tuned to work at any rate from 6% to 8%.
+  If you change `data/renters.json`, the tests check this.
 
 ## How to run
 From the project folder, in the VS Code terminal (with `(.venv)` showing):
@@ -46,10 +48,13 @@ python home_values.py             # refresh DFW home values from Zillow (monthly
 finance.py                    all the math; named constants at the top
 renters.py                    loads the renters, analyze() runs both paths per renter
 data/renters.json             the four fictional renters (edit here, not in code)
+rates.py                      live FRED mortgage rate, silent fallback to the default
+check_keys.py                 confirms the API keys work without printing them
 home_values.py                Zillow ZHVI download + DFW ZIP lookups
 data/dfw_zip_home_values.csv  254 DFW ZIPs, typical home value + 1-year change
 demo.py                       terminal walkthrough of the four renters
-test_finance.py, test_renters.py, test_home_values.py   tests
+test_*.py                     tests (renters are checked at every rate from 6% to 8%)
+.claude/settings.json + hooks/  project hooks: stay in project, block the key file, run tests after edits
 requirements.txt              Python packages
 HANDOFF.md                    what's built, what's not, next steps
 ```

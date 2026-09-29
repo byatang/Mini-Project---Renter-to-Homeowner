@@ -3,7 +3,7 @@ import math
 import pytest
 
 from finance import (
-    MAX_MONTHS, PROGRAMS, STRATEGIES, Debt, cash_to_close, interest_to_pay_off, project_path,
+    MAX_MONTHS, PROGRAMS, STRATEGIES, Assumptions, Debt, cash_to_close, interest_to_pay_off, project_path,
     qualifying_monthly_income,
 )
 from renters import analyze, load_renters
@@ -88,18 +88,33 @@ def test_four_renters_with_the_required_variety(renters):
     assert min(aprs) < 0.06 and max(aprs) > 0.20  # low-rate loans and high-interest cards
 
 
-def test_every_renter_can_buy_on_both_paths(renters):
+# The live FRED rate moves weekly, so the demo must work across a realistic range.
+DEMO_RATES = [0.06, 0.065, 0.07, 0.075, 0.08]
+
+
+@pytest.mark.parametrize("rate", DEMO_RATES)
+def test_every_renter_can_buy_on_both_paths(renters, rate):
     for r in renters:
-        for p in analyze(r)["paths"].values():
-            assert p.months_to_buy is not None, f"{r.name} can't buy on {p.strategy}"
+        for p in analyze(r, Assumptions(interest_rate=rate))["paths"].values():
+            assert p.months_to_buy is not None, f"{r.name} can't buy on {p.strategy} at {rate:.2%}"
 
 
-def test_at_least_one_close_call(renters):
-    """A close call: neither path wins on both speed and interest by a wide margin."""
-    def is_close(r):
-        paths = analyze(r)["paths"]
-        d, s = paths["debt_first"], paths["deposit_first"]
-        months_apart = abs(d.months_to_buy - s.months_to_buy)
-        interest_apart = abs(d.total_debt_interest - s.total_debt_interest)
-        return months_apart <= 12 and interest_apart <= 2_000
-    assert any(is_close(r) for r in renters)
+@pytest.mark.parametrize("rate", DEMO_RATES)
+def test_each_renter_keeps_its_story(renters, rate):
+    x = {r.id: analyze(r, Assumptions(interest_rate=rate)) for r in renters}
+    paths = {k: (v["paths"]["debt_first"], v["paths"]["deposit_first"]) for k, v in x.items()}
+
+    # Maya: the card pushes her over the DTI limit today, and debt first wins on time and interest.
+    assert x["maya"]["back_dti_today"] > x["maya"]["limits"].back
+    d, s = paths["maya"]
+    assert d.months_to_buy < s.months_to_buy and d.total_debt_interest < s.total_debt_interest
+
+    # Jordan: cheap debt, DTI fine, deposit first is far faster.
+    assert x["jordan"]["back_dti_today"] <= x["jordan"]["limits"].back
+    d, s = paths["jordan"]
+    assert s.months_to_buy + 12 <= d.months_to_buy
+
+    # Priya: the close call. Neither path wins on both speed and interest by a wide margin.
+    d, s = paths["priya"]
+    assert abs(d.months_to_buy - s.months_to_buy) <= 12
+    assert abs(d.total_debt_interest - s.total_debt_interest) <= 2_000

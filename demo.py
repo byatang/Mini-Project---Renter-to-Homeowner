@@ -6,11 +6,14 @@ itself is left to the model (added in a later step).
 
 import home_values as hv
 from finance import DEFAULT_LEVEL, Assumptions
+from rates import get_mortgage_rate
 from renters import analyze, load_renters
 
-a = Assumptions()
+rate = get_mortgage_rate()
+a = Assumptions(interest_rate=rate.rate)
 homes = hv.load()
-print(f"Mortgage rate {a.interest_rate:.2%} | planning against {DEFAULT_LEVEL} DTI limits\n")
+print(f"Mortgage rate {rate.rate:.2%} as of {rate.as_of} ({rate.source}) | "
+      f"planning against {DEFAULT_LEVEL} DTI limits\n")
 
 for r in load_renters():
     x = analyze(r, a)
