@@ -1,0 +1,67 @@
+# Renter-to-Homeowner Roadmap
+
+Class mini-project for BUAN 6V99 (Agentic AI & Process Automation, Fall 2026). It will be
+demoed publicly. Course materials are in the parent folder (`../BUAN6V99_*.md`). Current
+status and next steps are in `HANDOFF.md`.
+
+## What this project is
+An **educational explainer, not a financial adviser.** It walks through four fictional
+renters in Dallas-Fort Worth. For each one it explains whether they should **pay down debt
+first or save for a deposit (down payment) first**, using that renter's specific numbers.
+
+This note must always be visible on screen, word for word:
+> Educational tool, not personalized financial advice. Rates shown are not guaranteed.
+
+## The core rule
+**The code handles all the arithmetic. The model makes one judgment: debt first or deposit first.**
+- Python calculates every number: DTI, month-by-month savings projections, payments,
+  affordability, and interest costs.
+- The model receives only numbers the code has already calculated. It never does its own math.
+- The model's explanation must cite the specific numbers in front of it (e.g. "at 22% the card
+  costs more than the deposit gains you"), not generic advice.
+- A check compares every number the model cites against the values the code calculated, and
+  flags any mismatch on screen.
+- Never pull credit reports (all debts are entered by hand or come from the fictional renters
+  file). Never scrape listing sites.
+
+## Assumptions and rates
+- Lender thresholds and market assumptions are named constants in `finance.py` (`PROGRAMS`,
+  `Assumptions`), so they're easy to change. DTI is shown two ways: **comfortable** (classic
+  guidelines) and **maximum** (typical automated-underwriting limits).
+- Mortgage rate: hardcoded default of **6.5%** (the user's placeholder). An optional live rate
+  may come from FRED series `MORTGAGE30US` (free API key). If the live call fails, fall back to
+  the hardcoded rate silently. Always show which rate is in use and its date.
+
+## How to run
+From the project folder, in the VS Code terminal (with `(.venv)` showing):
+```
+pip install -r requirements.txt   # first time only
+python -m pytest                  # run all tests
+python demo.py                    # sample renter, printed in the terminal
+python home_values.py             # refresh DFW home values from Zillow (monthly)
+```
+
+## File structure
+```
+finance.py                  DTI, payments, debt payoff, savings, affordability (all the math)
+home_values.py              Zillow ZHVI download + DFW ZIP lookups
+data/dfw_zip_home_values.csv  254 DFW ZIPs, typical home value + 1-year change
+demo.py                     terminal walkthrough of one sample renter
+test_finance.py             tests for finance.py
+test_home_values.py         tests for home_values.py
+requirements.txt            Python packages
+HANDOFF.md                  what's built, what's not, next steps
+```
+
+## Stack
+Python 3.14 in `.venv`, pandas, pytest. The course recommends Streamlit for the app (not
+installed yet).
+
+## Working with this user
+- Business analytics grad student with a real estate background, new to coding, on Windows.
+- Build **one step at a time** and explain each step in plain language.
+- At the end of each step, commit and push to GitHub (`byatang/Mini-Project---Renter-to-Homeowner`).
+- **Do not add a "Co-Authored-By: Claude" line to commit messages.**
+- The project path contains spaces and `&`. Always quote it, and use `-LiteralPath` in
+  PowerShell. For multi-line Python snippets, write a script file; inline `python -c` breaks
+  on quotes in Windows PowerShell 5.1.
