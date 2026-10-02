@@ -1,12 +1,13 @@
+import json
 import math
 
 import pytest
 
 from finance import (
-    MAX_MONTHS, PROGRAMS, STRATEGIES, Assumptions, Debt, cash_to_close, interest_to_pay_off, project_path,
-    qualifying_monthly_income,
+    MAX_MONTHS, PROGRAMS, STRATEGIES, Assumptions, Debt, cash_to_close, dti, interest_to_pay_off,
+    project_path, qualifying_monthly_income,
 )
-from renters import analyze, load_renters
+from renters import RENTERS_FILE, analyze, load_renters
 
 FHA = PROGRAMS["FHA"]
 
@@ -71,6 +72,47 @@ def test_unreachable_goal_returns_none():
 def test_bad_strategy_name_is_rejected():
     with pytest.raises(ValueError):
         project_path("yolo", 5_000, [], 0, 100, 200_000, 0.035, FHA)
+
+
+# ---------- Bad data is rejected (findings 4 and 7) ----------
+
+@pytest.mark.parametrize("income", [0, -5_000])
+def test_dti_rejects_zero_or_negative_income(income):
+    with pytest.raises(ValueError, match="income must be greater than zero"):
+        dti(income, 1_500, [])
+
+
+def write_renters(tmp_path, **changes):
+    """A one-renter file based on Maya, with some fields changed."""
+    row = json.loads(RENTERS_FILE.read_text())[0]
+    row.update(changes)
+    path = tmp_path / "renters.json"
+    path.write_text(json.dumps([row]))
+    return path
+
+
+@pytest.mark.parametrize("income", [0, -78_000])
+def test_loading_rejects_zero_or_negative_income(tmp_path, income):
+    with pytest.raises(ValueError, match="Renter 'maya': income must be greater than zero"):
+        load_renters(write_renters(tmp_path, annual_income=income))
+
+
+def test_loading_rejects_variable_income_that_averages_to_nothing(tmp_path):
+    path = write_renters(tmp_path, income_type="variable", annual_income=40_000,
+                         prior_year_income=-60_000)
+    with pytest.raises(ValueError, match="income must be greater than zero"):
+        load_renters(path)
+
+
+def test_loading_rejects_duplicate_debt_names(tmp_path):
+    card = {"name": "Credit card", "balance": 1_000, "monthly_payment": 50, "apr": 0.2}
+    path = write_renters(tmp_path, debts=[card, {**card, "balance": 2_000}])
+    with pytest.raises(ValueError, match=r"Renter 'maya': duplicate debt names \['Credit card'\]"):
+        load_renters(path)
+
+
+def test_real_renters_file_passes_validation():
+    assert len(load_renters()) == 4
 
 
 # ---------- The four fictional renters ----------

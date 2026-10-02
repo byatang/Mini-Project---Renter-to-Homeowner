@@ -14,6 +14,9 @@ from finance import (
 
 RENTERS_FILE = Path(__file__).parent / "data" / "renters.json"
 
+# Shown at the start of every run, word for word.
+DISCLAIMER = "Educational tool, not personalized financial advice. Rates shown are not guaranteed."
+
 
 @dataclass
 class Renter:
@@ -37,7 +40,26 @@ class Renter:
 def load_renters(path=RENTERS_FILE):
     with open(path) as f:
         rows = json.load(f)
-    return [Renter(**{**r, "debts": [Debt(**d) for d in r["debts"]]}) for r in rows]
+    renters = [Renter(**{**r, "debts": [Debt(**d) for d in r["debts"]]}) for r in rows]
+    for r in renters:
+        validate(r)
+    return renters
+
+
+def validate(renter):
+    """Catch bad renter data when it's loaded, with a message that names the renter."""
+    income = qualifying_monthly_income(renter.annual_income, renter.income_type,
+                                       renter.prior_year_income)
+    if renter.annual_income <= 0 or income <= 0:
+        raise ValueError(f"Renter '{renter.id}': income must be greater than zero "
+                         f"(annual_income={renter.annual_income}, "
+                         f"prior_year_income={renter.prior_year_income}).")
+    # The projection tracks balances by debt name, so two debts with one name would merge.
+    names = [d.name for d in renter.debts]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ValueError(f"Renter '{renter.id}': duplicate debt names {duplicates}. "
+                         f"Give each debt a unique name, e.g. 'Credit card 1', 'Credit card 2'.")
 
 
 def analyze(renter, a=Assumptions(), level=DEFAULT_LEVEL):

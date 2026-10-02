@@ -24,8 +24,13 @@ This note must always be visible on screen, word for word:
 - The decision is a **bounded tool loop** (`advisor.decide()`): the model starts with only a
   renter id and asks for tools in `agent_tools.py` (get_renter_summary, project_debt_first,
   project_deposit_first, check_dti), then calls submit_decision. One step = one model call;
-  `MAX_STEPS = 4`. Without a decision by then, the result is "No decision reached" — never a
-  guess. The number check runs against every tool result from the run.
+  `MAX_STEPS = 6`. A decision is only accepted after results from BOTH projections (any order;
+  check_dti optional). Without a decision by the limit, the result is "No decision reached" —
+  never a guess. The number check runs against every tool result from the run, and a cited
+  number must carry the same unit as the fact (a bare "21" doesn't match "21 months").
+- The model never sees raw annual income: only the income the lender counts, plus a
+  words-only "Income trend" for variable earners.
+- Renters are validated on load: income must be positive, and debt names must be unique.
 - Tool results are pre-formatted strings; labels contain no digits, projections give quarterly
   checkpoints (not every month), and the code pre-calculates the differences between paths.
 - Models are tried in order (`GEMINI_MODELS`). 429/500 are retried; other errors move to the

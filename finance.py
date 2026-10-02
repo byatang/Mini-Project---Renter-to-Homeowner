@@ -109,6 +109,9 @@ def total_debt_payments(debts):
 
 def dti(gross_monthly_income, housing_cost, debts):
     """Returns (front-end DTI, back-end DTI)."""
+    if gross_monthly_income <= 0:
+        raise ValueError(f"Gross monthly income must be greater than zero to calculate DTI "
+                         f"(got {gross_monthly_income}).")
     front = housing_cost / gross_monthly_income
     back = (housing_cost + total_debt_payments(debts)) / gross_monthly_income
     return front, back

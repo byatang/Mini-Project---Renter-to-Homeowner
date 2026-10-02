@@ -26,7 +26,8 @@ GEMINI_MODELS = ("gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"
 TEMPERATURE = 0.2           # low: we want steady judgments, not creative ones
 DECISIONS = ("debt_first", "deposit_first")
 
-MAX_STEPS = 4               # one step = one call to the model (it may request several tools)
+MAX_STEPS = 6               # one step = one call to the model (it may request several tools)
+REQUIRED_BEFORE_DECIDING = ("project_debt_first", "project_deposit_first")
 RETRIES_PER_MODEL = 2       # attempts per model for retryable errors
 RETRY_WAIT_SECONDS = 2
 RETRY_CODES = {429, 500}    # rate-limited or server error: retry the same model
@@ -45,6 +46,8 @@ How to work:
   project_deposit_first, and check_dti.
 - You have at most {MAX_STEPS} turns, so request every tool you need at once (several tool
   calls in one turn is fine). Call submit_decision on its own, after you've read the results.
+- A decision is only accepted after you've received results from both project_debt_first
+  and project_deposit_first.
 
 Rules for the explanation:
 - Every number has already been calculated by the tools. Use only numbers from the tool
@@ -198,7 +201,7 @@ def decide(renter, rate, client=None, ask=ask_gemini, models=GEMINI_MODELS,
         return _unavailable(advice, note, f"no Gemini client ({type(e).__name__})")
 
     messages = [{"role": "user", "text": f"Decide for renter_id '{renter.id}' ({renter.name})."}]
-    model_index, data_seen = 0, False
+    model_index, received = 0, set()   # tools whose results the model has been sent
     for step in range(1, max_steps + 1):
         try:
             turn, model_index = ask_with_fallback(ask, client, messages, models, model_index, sleep)
@@ -216,7 +219,7 @@ def decide(renter, rate, client=None, ask=ask_gemini, models=GEMINI_MODELS,
         for n, call in enumerate(turn.calls):
             prefix = f"Step {step} -> " if n == 0 else " " * len(f"Step {step} ") + "-> "
             if call.name == "submit_decision":
-                problem = _submit_problem(call, alone=len(turn.calls) == 1, data_seen=data_seen)
+                problem = _submit_problem(call, alone=len(turn.calls) == 1, received=received)
                 if problem is None:
                     note(f"{prefix}submit_decision: {STRATEGY_NAMES[call.args['decision']]}")
                     advice.status, advice.model = "decided", models[model_index]
@@ -228,7 +231,7 @@ def decide(renter, rate, client=None, ask=ask_gemini, models=GEMINI_MODELS,
             else:
                 result, summary = tools.run(call.name, call.args)
                 if "error" not in result:
-                    data_seen = True
+                    received.add(call.name)
                     advice.tool_results.append(result)
             args = ", ".join(str(call.args[k]) for k in ("renter_id", "scenario") if k in call.args)
             note(f"{prefix}{call.name}({args}): {summary}")
@@ -240,12 +243,18 @@ def decide(renter, rate, client=None, ask=ask_gemini, models=GEMINI_MODELS,
     return advice
 
 
-def _submit_problem(call, alone, data_seen):
-    """Why a submit_decision call can't be accepted, or None if it's fine."""
+def _submit_problem(call, alone, received):
+    """Why a submit_decision call can't be accepted, or None if it's fine.
+
+    submit_decision must arrive in a turn of its own, so every tool in `received` was
+    already answered in an earlier step: the model has seen those results.
+    """
     if not alone:
         return "Call submit_decision on its own, after reading the other tool results."
-    if not data_seen:
-        return "Get the numbers from the tools before submitting a decision."
+    missing = [t for t in REQUIRED_BEFORE_DECIDING if t not in received]
+    if missing:
+        return (f"Not accepted yet: no results from {' or '.join(missing)}. Call "
+                f"{'it' if len(missing) == 1 else 'them'}, then submit your decision.")
     if call.args.get("decision") not in DECISIONS:
         return f"decision must be one of {', '.join(DECISIONS)}."
     if not str(call.args.get("explanation", "")).strip():
@@ -301,21 +310,24 @@ def _values(obj):
 def check_numbers(explanation, sources):
     """Numbers in the explanation that don't match any number the tools returned.
 
-    A cited number matches only if the units agree and the values are exactly equal.
+    A cited number matches only if the units are the same and the values are exactly equal.
     "31%" matches "31.0%" (same number), but "27%" does not match "26.99%" and "$6,400"
-    does not match "$6,364" -- rounding is math the model isn't allowed to do.
+    does not match "$6,364" -- rounding is math the model isn't allowed to do. A bare "21"
+    does not match "21 months": if the fact has a unit, the citation must carry it too.
     """
     known = [n for value in _values(sources) for n in find_numbers(value)]
     mismatches = []
     for cited in find_numbers(explanation):
-        ok = any((cited.unit is None or cited.unit == k.unit)
-                 and abs(k.value - cited.value) < 1e-9 for k in known)
+        ok = any(cited.unit == k.unit and abs(k.value - cited.value) < 1e-9 for k in known)
         if not ok:
             mismatches.append(cited.text)
     return mismatches
 
 
 if __name__ == "__main__":
+    from renters import DISCLAIMER
+    print(DISCLAIMER + "\n")
+
     from rates import get_mortgage_rate
     from renters import load_renters
 

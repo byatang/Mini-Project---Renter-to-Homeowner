@@ -4,10 +4,14 @@ Every number here is calculated by code. The debt-first vs. deposit-first decisi
 itself is left to the model (added in a later step).
 """
 
-import home_values as hv
-from finance import DEFAULT_LEVEL, Assumptions
-from rates import get_mortgage_rate
-from renters import analyze, load_renters
+from renters import DISCLAIMER
+
+print(DISCLAIMER + "\n")
+
+import home_values as hv  # noqa: E402  (imported after the disclaimer is on screen)
+from finance import DEFAULT_LEVEL, Assumptions  # noqa: E402
+from rates import get_mortgage_rate  # noqa: E402
+from renters import analyze, load_renters  # noqa: E402
 
 rate = get_mortgage_rate()
 a = Assumptions(interest_rate=rate.rate)

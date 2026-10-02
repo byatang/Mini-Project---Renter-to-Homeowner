@@ -104,22 +104,28 @@ class RenterTools:
 
     def get_renter_summary(self):
         r, x, lim = self.renter, self.x, self.x["limits"]
+        # Raw annual income is deliberately left out: the model gets the income the lender
+        # counts, and (for variable earners) the direction it's moving, in words only.
         f = {"Renter": r.name, "Story": r.story, "Goal": GOALS[r.goal],
              "Income type": INCOME_TYPES[r.income_type],
-             "Annual income this year": money(r.annual_income)}
+             "Monthly income the lender counts": money(x["qualifying_monthly_income"])}
         if r.prior_year_income:
-            f["Annual income last year"] = money(r.prior_year_income)
-        f["Monthly income the lender counts"] = money(x["qualifying_monthly_income"])
+            f["Income trend"] = ("rising this year" if r.annual_income > r.prior_year_income else
+                                 "falling this year" if r.annual_income < r.prior_year_income else
+                                 "flat")
         f["Savings today"] = money(r.savings)
         f["Extra cash available each month"] = money(r.extra_per_month)
+        if not r.debts:
+            f["Debts"] = "none"
         for d in r.debts:
             f[f"{d.name} balance"] = money(d.balance)
             f[f"{d.name} interest rate (APR)"] = pct(d.apr)
             f[f"{d.name} monthly payment"] = money(d.monthly_payment)
-        top = max(r.debts, key=lambda d: d.apr)
         f["Savings account yield (what the deposit fund earns)"] = pct(SAVINGS_APY)
-        f[f"Gap between {top.name} APR and savings yield"] = (
-            f"{(top.apr - SAVINGS_APY) * 100:.2f} percentage points")
+        if r.debts:   # no debts -> no APR to compare, so no gap fact
+            top = max(r.debts, key=lambda d: d.apr)
+            f[f"Gap between {top.name} APR and savings yield"] = (
+                f"{(top.apr - SAVINGS_APY) * 100:.2f} percentage points")
         f["Target home price"] = money(r.target_price)
         f["Loan program and down payment"] = f"{r.program}, {pct(r.down_pct, 1)} down"
         f["Mortgage rate"] = f"{pct(self.rate.rate)} ({self.rate.source}, as of {self.rate.as_of})"
@@ -130,7 +136,8 @@ class RenterTools:
         f["Total DTI today"] = pct(x["back_dti_today"], 1)
         f["Total DTI limit"] = pct(lim.back, 1)
         f["Qualifies on DTI today"] = self._yes(x["front_dti_today"], x["back_dti_today"])
-        summary = (f"{r.name}, {r.income_type} income {money(r.annual_income)}; total DTI "
+        summary = (f"{r.name}, {r.income_type} income, lender counts "
+                   f"{f['Monthly income the lender counts']}/mo; total DTI "
                    f"{f['Total DTI today']} vs {f['Total DTI limit']} limit")
         return f, summary
 

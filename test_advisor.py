@@ -109,16 +109,49 @@ def test_unknown_tool_is_handled_without_crashing():
 # ---------- submit_decision is checked ----------
 
 @pytest.mark.parametrize("turns, expected", [
-    ([submit()], "Get the numbers from the tools"),                       # no data yet
+    ([submit()], "no results from project_debt_first or project_deposit_first"),  # no data
     ([NORMAL_RUN[0], ModelTurn([call("project_debt_first", renter_id="maya"),
                                 submit().calls[0]])], "on its own"),        # bundled with tools
-    ([NORMAL_RUN[0], submit(decision="maybe")], "decision must be one of"),
-    ([NORMAL_RUN[0], submit(explanation="  ")], "explanation is empty"),
+    ([NORMAL_RUN[1], submit(decision="maybe")], "decision must be one of"),
+    ([NORMAL_RUN[1], submit(explanation="  ")], "explanation is empty"),
 ])
 def test_bad_submissions_are_rejected_not_accepted(turns, expected):
     advice, lines = run(FakeModel(turns + [ModelTurn([], text="...")]))
     assert advice.decision is None
     assert any("rejected" in line and expected in line for line in lines)
+
+
+def test_decision_after_only_the_summary_is_sent_back():
+    """Finding 2: no decision until results from BOTH projections are in."""
+    turns = [NORMAL_RUN[0],                                         # summary only
+             submit(),                                              # too early: sent back
+             ModelTurn([call("project_deposit_first", renter_id="maya")]),
+             submit(),                                              # still missing debt first
+             ModelTurn([call("project_debt_first", renter_id="maya")]),
+             submit()]                                              # now accepted
+    fake = FakeModel(turns)
+    advice, lines = run(fake)
+    # The first early submit got a tool message naming both missing projections...
+    _, conversation = fake.calls[2]
+    first_reply = conversation[-1]["results"][0]
+    assert first_reply[0] == "submit_decision"
+    assert first_reply[1]["error"] == ("Not accepted yet: no results from project_debt_first or "
+                                       "project_deposit_first. Call them, then submit your decision.")
+    # ...the second named only the one still missing, and the loop carried on to a decision.
+    _, conversation = fake.calls[4]
+    assert "no results from project_debt_first." in conversation[-1]["results"][0][1]["error"]
+    assert advice.status == "decided" and len(fake.calls) == 6 == MAX_STEPS
+
+
+def test_order_of_projections_does_not_matter_and_check_dti_is_optional():
+    turns = [ModelTurn([call("project_deposit_first", renter_id="maya"),
+                        call("project_debt_first", renter_id="maya")]), submit()]
+    advice, _ = run(FakeModel(turns))
+    assert advice.status == "decided"
+
+
+def test_max_steps_is_six():
+    assert MAX_STEPS == 6
 
 
 # ---------- Number check uses every tool result from the run ----------
@@ -130,12 +163,11 @@ def test_numbers_not_returned_by_any_tool_are_flagged():
 
 
 def test_number_from_a_tool_that_was_never_called_is_flagged():
-    # The model only asked for the debt-first projection, so "41 months" (deposit first)
-    # was never in front of it.
-    turns = [ModelTurn([call("project_debt_first", renter_id="maya")]),
-             submit(explanation="Debt first takes 21 months, not 41 months.")]
+    # The model skipped get_renter_summary, so the card's 26.99% APR was never in front of it.
+    turns = [NORMAL_RUN[1], submit(explanation="The 26.99% card: 21 months vs 41 months.")]
     advice, _ = run(FakeModel(turns))
-    assert advice.mismatches == ["41 months"]
+    assert advice.status == "decided"
+    assert advice.mismatches == ["26.99%"]
 
 
 def test_find_numbers_reads_units():
@@ -151,6 +183,16 @@ def test_exact_match_rules():
     assert check_numbers("The limit is 43%.", sources) == []          # same number
     assert check_numbers("The card is 27%.", sources) == ["27%"]       # rounded: flagged
     assert check_numbers("She buys in 21%.", sources) == ["21%"]       # wrong unit: flagged
+
+
+def test_bare_number_does_not_match_a_fact_with_a_unit():
+    """Finding 5: "21" alone is not "21 months"."""
+    sources = [{"time": "21 months", "limit": "43.0%", "cost": "$6,364", "tools": "3"}]
+    assert check_numbers("She buys in 21.", sources) == ["21"]
+    assert check_numbers("The limit is 43.", sources) == ["43"]
+    assert check_numbers("It costs 6,364.", sources) == ["6,364"]
+    assert check_numbers("She buys in 21 months.", sources) == []      # with the unit: fine
+    assert check_numbers("There are 3 tools.", sources) == []          # unitless fact, bare cite
 
 
 # ---------- Retries, fallback, and key errors ----------
@@ -268,6 +310,41 @@ def test_check_dti_scenarios(tools):
 def test_bad_tool_calls_return_errors(tools, name, args, expected):
     result, _ = tools.run(name, args)
     assert result["error"].startswith(expected)
+
+
+def test_summary_leaves_out_raw_annual_income_but_keeps_debt_facts(tools):
+    """Finding 6: no raw annual income goes to the model; debt facts stay citable."""
+    summary, line = tools.run("get_renter_summary", {"renter_id": "maya"})
+    assert not any("annual" in label.lower() for label in summary)
+    assert "$78,000" not in summary.values() and "$78,000" not in line
+    assert summary["Monthly income the lender counts"] == "$6,500"
+    assert summary["Credit card balance"] == "$15,000"
+    assert summary["Credit card interest rate (APR)"] == "26.99%"
+    assert summary["Credit card monthly payment"] == "$450"
+
+
+@pytest.mark.parametrize("renter_id, trend", [("priya", "rising this year"),
+                                              ("marcus", "falling this year")])
+def test_variable_income_direction_is_given_in_words(renter_id, trend):
+    renter = next(r for r in load_renters() if r.id == renter_id)
+    summary, _ = RenterTools(renter, RATE).run("get_renter_summary", {"renter_id": renter_id})
+    assert summary["Income trend"] == trend
+    assert not any(ch.isdigit() for ch in summary["Income trend"])
+
+
+def test_renter_with_no_debts_is_handled():
+    """Finding 3: "debts": [] must not crash, and there's no APR gap to report."""
+    no_debt = replace(MAYA, id="nodebt", debts=[])
+    t = RenterTools(no_debt, RATE)
+    summary, line = t.run("get_renter_summary", {"renter_id": "nodebt"})
+    assert summary["Debts"] == "none"
+    assert not any("Gap between" in label or "APR" in label for label in summary)
+    assert "Savings account yield (what the deposit fund earns)" in summary
+    # The other tools work too: with no debt, both paths are the same.
+    debt, _ = t.run("project_debt_first", {"renter_id": "nodebt"})
+    deposit, _ = t.run("project_deposit_first", {"renter_id": "nodebt"})
+    assert debt["Time until they can buy"] == deposit["Time until they can buy"]
+    assert debt["Total interest on today's debts"] == "$0"
 
 
 def test_tool_labels_contain_no_digits(tools):
