@@ -21,10 +21,17 @@ This note must always be visible on screen, word for word:
   costs more than the deposit gains you"), not generic advice.
 - A check compares every number the model cites against the values the code calculated, and
   flags any mismatch on screen. Matches must be exact (31% = 31.0%, but 27% != 26.99%).
-- The model sees only `advisor.fact_sheet()`. Fact labels contain no digits, and the code
-  pre-calculates the differences between the paths so the model never subtracts.
-- Models are tried in order (`GEMINI_MODELS`); free-tier models are often overloaded (503).
-  If all fail, the app shows "AI explanation unavailable" instead of breaking.
+- The decision is a **bounded tool loop** (`advisor.decide()`): the model starts with only a
+  renter id and asks for tools in `agent_tools.py` (get_renter_summary, project_debt_first,
+  project_deposit_first, check_dti), then calls submit_decision. One step = one model call;
+  `MAX_STEPS = 4`. Without a decision by then, the result is "No decision reached" — never a
+  guess. The number check runs against every tool result from the run.
+- Tool results are pre-formatted strings; labels contain no digits, projections give quarterly
+  checkpoints (not every month), and the code pre-calculates the differences between paths.
+- Models are tried in order (`GEMINI_MODELS`). 429/500 are retried; other errors move to the
+  next model; a rejected key (401/403, or 400 "API key") stops right away. If a backup model
+  takes over mid-run, earlier steps are retold as plain text (Gemini rejects another model's
+  "thought signatures"). If all fail: "AI explanation unavailable", never a crash.
 - Never pull credit reports (all debts come from the fictional renters file). Never scrape
   listing sites.
 
@@ -52,7 +59,8 @@ python home_values.py             # refresh DFW home values from Zillow (monthly
 finance.py                    all the math; named constants at the top
 renters.py                    loads the renters, analyze() runs both paths per renter
 data/renters.json             the four fictional renters (edit here, not in code)
-advisor.py                    fact sheet -> Gemini decision -> number check (python advisor.py)
+agent_tools.py                the tools the model can call (wrap renters.analyze() results)
+advisor.py                    bounded tool loop -> decision -> number check (python advisor.py)
 rates.py                      live FRED mortgage rate, silent fallback to the default
 check_keys.py                 confirms the API keys work without printing them
 home_values.py                Zillow ZHVI download + DFW ZIP lookups

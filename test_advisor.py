@@ -1,44 +1,142 @@
-"""Tests for the model layer. No real Gemini calls: the model is replaced with fakes."""
+"""Tests for the bounded tool loop. No real Gemini calls: a scripted fake model plays each turn."""
 
-import json
+from dataclasses import replace
 
 import pytest
 
-from advisor import Advice, check_numbers, decide, fact_sheet, find_numbers
-from finance import Assumptions
-from rates import MortgageRate
-from renters import analyze, load_renters
+from advisor import (
+    MAX_STEPS, UNAVAILABLE, ModelTurn, ToolCall, check_numbers, decide, find_numbers,
+)
+from agent_tools import RenterTools
+from rates import FALLBACK
+from renters import load_renters
 
-RATE = MortgageRate(0.0703, "2026-09-24", "Freddie Mac 30-year fixed average, via FRED", True)
+RATE = replace(FALLBACK, rate=0.0703, as_of="2026-09-24", source="test rate", is_live=True)
+MAYA = next(r for r in load_renters() if r.id == "maya")
 
-
-@pytest.fixture(scope="module")
-def maya_facts():
-    maya = next(r for r in load_renters() if r.id == "maya")
-    return fact_sheet(maya, analyze(maya, Assumptions(interest_rate=RATE.rate)), RATE)
-
-
-# ---------- Fact sheet ----------
-
-def test_fact_sheet_has_the_numbers_the_model_needs(maya_facts):
-    assert maya_facts["Credit card interest rate (APR)"] == "26.99%"
-    assert maya_facts["Total DTI today"] == "45.6%"
-    assert maya_facts["Total DTI limit"] == "43.0%"
-    assert maya_facts["Qualifies on DTI today"] == "no"
-    assert maya_facts["Debt first: time until they can buy"] == "21 months"
-    assert maya_facts["Deposit first: time until they can buy"] == "41 months"
-    # Differences are calculated by code, so the model never has to subtract.
-    assert maya_facts["Faster path"] == "debt first by 20 months"
-    assert maya_facts["Interest difference"].startswith("debt first saves $")
-    assert "7.03%" in maya_facts["Mortgage rate"] and "2026-09-24" in maya_facts["Mortgage rate"]
+GOOD_EXPLANATION = (
+    "Maya should pay down debt first: her total DTI of 45.6% is over the 43.0% limit and her "
+    "card charges 26.99%. Debt first lets her buy in 21 months instead of 41 months and saves "
+    "$9,726.")
 
 
-def test_fact_sheet_labels_contain_no_digits(maya_facts):
-    """Numbers only live in values, so the model can't cite a number from a label."""
-    assert not any(ch.isdigit() for label in maya_facts for ch in label)
+def call(name, **args):
+    return ToolCall(name, args)
 
 
-# ---------- Number check ----------
+def submit(decision="debt_first", explanation=GOOD_EXPLANATION):
+    return ModelTurn([call("submit_decision", decision=decision, explanation=explanation)])
+
+
+NORMAL_RUN = [
+    ModelTurn([call("get_renter_summary", renter_id="maya")]),
+    ModelTurn([call("project_debt_first", renter_id="maya"),
+               call("project_deposit_first", renter_id="maya")]),
+    submit(),
+]
+
+
+class FakeModel:
+    """Plays scripted turns in order (repeating the last one) and records every call."""
+
+    def __init__(self, turns, errors=None):
+        self.turns, self.errors = list(turns), errors or {}
+        self.calls = []          # (model name, copy of the conversation it was sent)
+        self.answered = 0        # successful turns so far
+
+    def __call__(self, client, messages, model):
+        self.calls.append((model, list(messages)))
+        queue = self.errors.get(model)
+        if queue:
+            raise queue.pop(0)
+        turn = self.turns[min(self.answered, len(self.turns) - 1)]
+        self.answered += 1
+        return turn
+
+
+class ApiError(Exception):
+    def __init__(self, code, message=""):
+        super().__init__(f"{code} {message}")
+        self.code = code
+
+
+def run(fake, models=("m1",), **kwargs):
+    lines = []
+    advice = decide(MAYA, RATE, client=object(), ask=fake, models=models,
+                    sleep=lambda s: None, log=lines.append, **kwargs)
+    return advice, lines
+
+
+# ---------- The three required behaviors ----------
+
+def test_normal_renter_reaches_a_decision_in_under_max_steps():
+    fake = FakeModel(NORMAL_RUN)
+    advice, lines = run(fake)
+    assert advice.status == "decided" and advice.decision == "debt_first"
+    assert len(fake.calls) == 3 < MAX_STEPS
+    assert advice.mismatches == []                 # every cited number came from a tool
+    assert lines[0].startswith("Step 1 -> get_renter_summary(maya): Maya")
+    assert lines[1].startswith("Step 2 -> project_debt_first(maya): buys in 21 months")
+    assert "project_deposit_first(maya): buys in 41 months" in lines[2]
+    assert lines[3] == "Step 3 -> submit_decision: debt first"
+
+
+def test_model_that_never_finishes_stops_at_max_steps():
+    fake = FakeModel([ModelTurn([call("get_renter_summary", renter_id="maya")])])
+    advice, lines = run(fake)
+    assert len(fake.calls) == MAX_STEPS
+    assert advice.status == "no_decision" and advice.decision is None
+    assert advice.message == f"No decision reached after {MAX_STEPS} steps"
+    assert lines[-1] == advice.message
+
+
+def test_model_that_only_chats_also_stops_at_max_steps():
+    fake = FakeModel([ModelTurn([], text="Let me think about it...")])
+    advice, _ = run(fake)
+    assert len(fake.calls) == MAX_STEPS and advice.decision is None
+
+
+def test_unknown_tool_is_handled_without_crashing():
+    fake = FakeModel([ModelTurn([call("fly_to_moon", renter_id="maya")])] + NORMAL_RUN)
+    advice, lines = run(fake, max_steps=5)
+    assert "Step 1 -> fly_to_moon(maya): error: Unknown tool 'fly_to_moon'" in lines[0]
+    # The error went back to the model as a tool result, and the loop carried on.
+    _, second_conversation = fake.calls[1]
+    assert second_conversation[-1]["results"][0][1]["error"].startswith("Unknown tool")
+    assert advice.status == "decided"
+
+
+# ---------- submit_decision is checked ----------
+
+@pytest.mark.parametrize("turns, expected", [
+    ([submit()], "Get the numbers from the tools"),                       # no data yet
+    ([NORMAL_RUN[0], ModelTurn([call("project_debt_first", renter_id="maya"),
+                                submit().calls[0]])], "on its own"),        # bundled with tools
+    ([NORMAL_RUN[0], submit(decision="maybe")], "decision must be one of"),
+    ([NORMAL_RUN[0], submit(explanation="  ")], "explanation is empty"),
+])
+def test_bad_submissions_are_rejected_not_accepted(turns, expected):
+    advice, lines = run(FakeModel(turns + [ModelTurn([], text="...")]))
+    assert advice.decision is None
+    assert any("rejected" in line and expected in line for line in lines)
+
+
+# ---------- Number check uses every tool result from the run ----------
+
+def test_numbers_not_returned_by_any_tool_are_flagged():
+    bad = submit(explanation="Debt first saves $12,000 and takes 21 months.")
+    advice, _ = run(FakeModel(NORMAL_RUN[:2] + [bad]))
+    assert advice.mismatches == ["$12,000"]
+
+
+def test_number_from_a_tool_that_was_never_called_is_flagged():
+    # The model only asked for the debt-first projection, so "41 months" (deposit first)
+    # was never in front of it.
+    turns = [ModelTurn([call("project_debt_first", renter_id="maya")]),
+             submit(explanation="Debt first takes 21 months, not 41 months.")]
+    advice, _ = run(FakeModel(turns))
+    assert advice.mismatches == ["41 months"]
+
 
 def test_find_numbers_reads_units():
     found = {n.text: (n.value, n.unit) for n in find_numbers(
@@ -48,94 +146,132 @@ def test_find_numbers_reads_units():
                      "23.49 percentage points": (23.49, "pct")}
 
 
-def test_good_explanation_passes(maya_facts):
-    text = ("Maya should pay the card first: at 26.99% it costs far more than the 3.50% savings "
-            "yield, her total DTI of 45.6% is over the 43.0% limit, and debt first lets her buy "
-            "in 21 months instead of 41 months.")
-    assert check_numbers(text, maya_facts) == []
+def test_exact_match_rules():
+    sources = [{"limit": "43.0%", "apr": "26.99%", "time": "21 months"}]
+    assert check_numbers("The limit is 43%.", sources) == []          # same number
+    assert check_numbers("The card is 27%.", sources) == ["27%"]       # rounded: flagged
+    assert check_numbers("She buys in 21%.", sources) == ["21%"]       # wrong unit: flagged
 
 
-def test_same_number_written_differently_passes(maya_facts):
-    assert check_numbers("Her total DTI limit is 43%.", maya_facts) == []  # 43% == 43.0%
+# ---------- Retries, fallback, and key errors ----------
+
+def test_429_and_500_are_retried_then_the_next_model_continues():
+    fake = FakeModel(NORMAL_RUN, errors={"busy": [ApiError(429), ApiError(500)]})
+    advice, _ = run(fake, models=("busy", "ok"))
+    assert [m for m, _ in fake.calls[:3]] == ["busy", "busy", "ok"]
+    assert advice.status == "decided" and advice.model == "ok"
 
 
-def test_invented_or_rounded_numbers_are_flagged(maya_facts):
-    text = ("The card at 27% costs about $9,700 more, and she could buy in 18 months "
-            "at a 5% rate.")
-    assert check_numbers(text, maya_facts) == ["27%", "$9,700", "18 months", "5%"]
+def test_other_server_errors_skip_to_the_next_model_without_retry():
+    fake = FakeModel(NORMAL_RUN, errors={"overloaded": [ApiError(503)]})
+    advice, _ = run(fake, models=("overloaded", "ok"))
+    assert [m for m, _ in fake.calls[:2]] == ["overloaded", "ok"]
+    assert advice.status == "decided"
 
 
-def test_right_number_wrong_unit_is_flagged(maya_facts):
-    assert check_numbers("She can buy in 21%.", maya_facts) == ["21%"]  # 21 is months, not %
+def test_failed_attempts_do_not_use_up_steps():
+    fake = FakeModel(NORMAL_RUN, errors={"flaky": [ApiError(429)]})
+    advice, lines = run(fake, models=("flaky",))
+    assert advice.status == "decided" and len(fake.calls) == 4   # 1 failed try + 3 real steps
+    assert lines[-1].startswith("Step 3 ->")                      # still only 3 steps counted
 
 
-# ---------- Decision (fake model) ----------
-
-class Busy(Exception):
-    code = 503
-
-
-class NotFound(Exception):
-    code = 404
-
-
-def reply(decision="debt_first", explanation="Debt first saves time: 21 months vs 41 months."):
-    return json.dumps({"decision": decision, "explanation": explanation})
+@pytest.mark.parametrize("error", [ApiError(401), ApiError(403),
+                                   ApiError(400, "API key not valid. Please pass a valid API key.")])
+def test_key_errors_stop_right_away(error):
+    fake = FakeModel(NORMAL_RUN, errors={"m1": [error]})
+    advice, lines = run(fake, models=("m1", "m2"))
+    assert len(fake.calls) == 1                     # no retry, no other model
+    assert advice.status == "unavailable" and advice.decision is None
+    assert advice.message == UNAVAILABLE
+    assert lines[-1].startswith(UNAVAILABLE)
 
 
-def test_decide_returns_decision_and_checked_numbers(maya_facts):
-    advice = decide(maya_facts, client=object(), ask=lambda c, f, m: reply(), models=("m1",))
-    assert advice == Advice("debt_first", "Debt first saves time: 21 months vs 41 months.",
-                            [], "m1")
+def test_all_models_failing_is_unavailable_not_a_crash():
+    fake = FakeModel(NORMAL_RUN, errors={"a": [ApiError(503)], "b": [ApiError(429), ApiError(429)]})
+    advice, _ = run(fake, models=("a", "b"))
+    assert advice.status == "unavailable" and advice.message == UNAVAILABLE
+    assert "429" in advice.reason
 
 
-def test_decide_flags_bad_numbers(maya_facts):
-    bad = reply(explanation="Debt first saves $12,000.")
-    advice = decide(maya_facts, client=object(), ask=lambda c, f, m: bad, models=("m1",))
-    assert advice.decision == "debt_first" and advice.mismatches == ["$12,000"]
+# ---------- History sent to Gemini when a backup model takes over ----------
+
+def history(raw):
+    return [
+        {"role": "user", "text": "Decide for renter_id 'maya' (Maya)."},
+        {"role": "model", "calls": [call("get_renter_summary", renter_id="maya")], "text": "",
+         "raw": raw, "model": "model-a"},
+        {"role": "tool", "results": [("get_renter_summary", {"Total DTI today": "46.1%"})]},
+    ]
 
 
-def test_busy_model_is_retried_then_the_next_model_answers(maya_facts):
-    calls = []
-
-    def ask(client, facts, model):
-        calls.append(model)
-        if model == "busy":
-            raise Busy()
-        return reply("deposit_first", "Deposit first.")
-
-    advice = decide(maya_facts, client=object(), ask=ask, models=("busy", "ok"),
-                    sleep=lambda s: None)
-    assert calls == ["busy", "busy", "ok"]      # retried once, then moved on
-    assert advice.decision == "deposit_first" and advice.model == "ok"
+def test_same_model_gets_its_own_turn_back_untouched():
+    from google.genai import types
+    from advisor import _to_gemini
+    raw = types.Content(role="model", parts=[
+        types.Part.from_function_call(name="get_renter_summary", args={"renter_id": "maya"})])
+    contents = _to_gemini(history(raw), "model-a")
+    assert contents[1] is raw                                   # sealed original, as-is
+    assert contents[2].parts[0].function_response.name == "get_renter_summary"
 
 
-def test_missing_model_is_skipped_without_retry(maya_facts):
-    calls = []
+def test_backup_model_gets_earlier_steps_retold_as_plain_text():
+    from google.genai import types
+    from advisor import _to_gemini
+    raw = types.Content(role="model", parts=[
+        types.Part.from_function_call(name="get_renter_summary", args={"renter_id": "maya"})])
+    contents = _to_gemini(history(raw), "model-b")
+    parts = [p for c in contents for p in c.parts]
+    assert not any(p.function_call or p.function_response for p in parts)   # nothing sealed
+    assert "I requested these tools: get_renter_summary" in contents[1].parts[0].text
+    assert "46.1%" in contents[2].parts[0].text                 # same numbers, as text
 
-    def ask(client, facts, model):
-        calls.append(model)
-        if model == "gone":
-            raise NotFound()
-        return reply()
 
-    decide(maya_facts, client=object(), ask=ask, models=("gone", "ok"), sleep=lambda s: None)
-    assert calls == ["gone", "ok"]
+# ---------- The tools themselves ----------
+
+@pytest.fixture(scope="module")
+def tools():
+    return RenterTools(MAYA, RATE)
 
 
-@pytest.mark.parametrize("bad_reply", [
-    "not json", json.dumps({"decision": "maybe", "explanation": "x"}),
-    json.dumps({"decision": "debt_first"}), json.dumps({"decision": "debt_first", "explanation": " "}),
+def test_tools_return_the_code_calculated_numbers(tools):
+    summary, _ = tools.run("get_renter_summary", {"renter_id": "maya"})
+    assert summary["Total DTI today"] == "45.6%" and summary["Total DTI limit"] == "43.0%"
+    debt, _ = tools.run("project_debt_first", {"renter_id": "maya"})
+    p = tools.paths["debt_first"]
+    assert debt["Time until they can buy"] == f"{p.months_to_buy} months" == "21 months"
+    assert debt["Timing compared with deposit first"] == "debt first is faster by 20 months"
+    deposit, _ = tools.run("project_deposit_first", {"renter_id": "maya"})
+    assert deposit["Timing compared with debt first"] == "deposit first is slower by 20 months"
+
+
+def test_checkpoints_are_quarterly_and_end_at_purchase(tools):
+    result, _ = tools.run("project_debt_first", {"renter_id": "maya"})
+    points = result["Checkpoints"]
+    assert [p.split(":")[0] for p in points] == [f"after {m} months" for m in (3, 6, 9, 12, 15, 18, 21)]
+    assert points[-1].endswith("(can buy)")
+
+
+def test_check_dti_scenarios(tools):
+    today, line = tools.run("check_dti", {"renter_id": "maya", "scenario": "today"})
+    assert today["Within limits"] == "no" and "over the limit" in line
+    later, _ = tools.run("check_dti", {"renter_id": "maya", "scenario": "debt_first"})
+    assert later["Within limits"] == "yes"
+
+
+@pytest.mark.parametrize("name, args, expected", [
+    ("check_dti", {"renter_id": "maya", "scenario": "tomorrow"}, "Unknown scenario"),
+    ("get_renter_summary", {"renter_id": "jordan"}, "Unknown renter_id"),
+    ("get_renter_summary", {}, "Unknown renter_id"),
+    ("fly_to_moon", {"renter_id": "maya"}, "Unknown tool"),
 ])
-def test_unusable_replies_never_crash(maya_facts, bad_reply):
-    advice = decide(maya_facts, client=object(), ask=lambda c, f, m: bad_reply,
-                    models=("m1",), sleep=lambda s: None)
-    assert advice.decision is None and "unavailable" in advice.error
+def test_bad_tool_calls_return_errors(tools, name, args, expected):
+    result, _ = tools.run(name, args)
+    assert result["error"].startswith(expected)
 
 
-def test_all_models_down_gives_a_friendly_error(maya_facts):
-    def ask(client, facts, model):
-        raise Busy()
-    advice = decide(maya_facts, client=object(), ask=ask, models=("a", "b"), sleep=lambda s: None)
-    assert advice.decision is None
-    assert advice.error == "AI explanation unavailable right now (Busy 503)."
+def test_tool_labels_contain_no_digits(tools):
+    """Numbers only live in values, so the model can't cite a number from a label."""
+    for name in ("get_renter_summary", "project_debt_first", "project_deposit_first"):
+        result, _ = tools.run(name, {"renter_id": "maya"})
+        assert not any(ch.isdigit() for label in result for ch in label)

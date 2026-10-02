@@ -1,8 +1,11 @@
-"""The one judgment the model makes: debt first or deposit first.
+"""The one judgment the model makes, as a bounded tool loop: debt first or deposit first.
 
-1. fact_sheet()   code turns its own calculations into labeled, pre-formatted numbers
-2. decide()       Gemini sees only that fact sheet and returns a decision + explanation
-3. check_numbers() every number in the explanation must match a number on the fact sheet
+The model starts with nothing but a renter id. Each step it asks for tools (agent_tools.py),
+the code runs them and sends back the results, and it repeats until the model calls
+submit_decision -- or until MAX_STEPS model calls have been made, in which case the answer
+is "No decision reached". A decision is never guessed.
+
+Every number in the final explanation must exactly match a number some tool returned.
 
 Run all four renters live: python advisor.py
 """
@@ -15,186 +18,248 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
-from finance import SAVINGS_APY
+from agent_tools import DATA_TOOLS, STRATEGY_NAMES, TOOL_DECLARATIONS, RenterTools
 
-# Tried in order; if one is overloaded or unavailable, the next one answers.
+# Tried in order; if one is overloaded or unavailable, the next one carries on.
 # (gemini-2.5-flash is closed to new API keys.)
 GEMINI_MODELS = ("gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite")
-TEMPERATURE = 0.2          # low: we want steady judgments, not creative ones
+TEMPERATURE = 0.2           # low: we want steady judgments, not creative ones
 DECISIONS = ("debt_first", "deposit_first")
 
-GOALS = {"buy_sooner": "Buy a home as soon as possible",
-         "better_rate": "Buy on the strongest terms (lower DTI), even if it takes longer"}
-INCOME_TYPES = {"salaried": "Salaried (steady paycheck)",
-                "variable": "Variable (commission or freelance; the lender averages the last "
-                            "two years, or uses the current year if income is falling)"}
+MAX_STEPS = 4               # one step = one call to the model (it may request several tools)
+RETRIES_PER_MODEL = 2       # attempts per model for retryable errors
+RETRY_WAIT_SECONDS = 2
+RETRY_CODES = {429, 500}    # rate-limited or server error: retry the same model
+KEY_ERROR_CODES = {401, 403}  # key rejected: stop right away, retrying can't help
 
+UNAVAILABLE = "AI explanation unavailable"
 
-# ---------- 1. Fact sheet: every number the model may use ----------
-
-def money(x):
-    return f"${x:,.0f}"
-
-
-def pct(x, places=2):
-    return f"{x * 100:.{places}f}%"
-
-
-def months(n):
-    return "not within 10 years" if n is None else f"{n} month" + ("" if n == 1 else "s")
-
-
-def fact_sheet(renter, analysis, rate):
-    """Ordered {label: value} of everything the model is allowed to cite."""
-    lim = analysis["limits"]
-    debt, deposit = analysis["paths"]["debt_first"], analysis["paths"]["deposit_first"]
-    f = {
-        "Renter": renter.name,
-        "Goal": GOALS[renter.goal],
-        "Income type": INCOME_TYPES[renter.income_type],
-        "Annual income this year": money(renter.annual_income),
-    }
-    if renter.prior_year_income:
-        f["Annual income last year"] = money(renter.prior_year_income)
-    f["Monthly income the lender counts"] = money(analysis["qualifying_monthly_income"])
-    f["Savings today"] = money(renter.savings)
-    f["Extra cash available each month"] = money(renter.extra_per_month)
-
-    for d in renter.debts:
-        f[f"{d.name} balance"] = money(d.balance)
-        f[f"{d.name} interest rate (APR)"] = pct(d.apr)
-        f[f"{d.name} monthly payment"] = money(d.monthly_payment)
-    top = max(renter.debts, key=lambda d: d.apr)
-    f["Savings account yield (what the deposit fund earns)"] = pct(SAVINGS_APY)
-    f[f"Gap between {top.name} APR and savings yield"] = (
-        f"{(top.apr - SAVINGS_APY) * 100:.2f} percentage points")
-
-    f["Target home price"] = money(renter.target_price)
-    f["Loan program and down payment"] = f"{renter.program}, {pct(renter.down_pct, 1)} down"
-    f["Mortgage rate"] = f"{pct(rate.rate)} ({rate.source}, as of {rate.as_of})"
-    f["Monthly housing cost"] = money(analysis["housing_cost"]["total"])
-    f["Cash needed to close (deposit + closing costs)"] = money(analysis["cash_to_close"])
-    f["Housing-only DTI today"] = pct(analysis["front_dti_today"], 1)
-    f["Housing-only DTI limit"] = pct(lim.front, 1)
-    f["Total DTI today"] = pct(analysis["back_dti_today"], 1)
-    f["Total DTI limit"] = pct(lim.back, 1)
-    f["Qualifies on DTI today"] = ("yes" if analysis["front_dti_today"] <= lim.front
-                                  and analysis["back_dti_today"] <= lim.back else "no")
-
-    for label, p in (("Debt first", debt), ("Deposit first", deposit)):
-        f[f"{label}: time until they can buy"] = months(p.months_to_buy)
-        f[f"{label}: total interest on today's debts"] = money(p.total_debt_interest)
-        f[f"{label}: total DTI at purchase"] = pct(p.back_dti_at_purchase, 1)
-        f[f"{label}: debt still owed at purchase"] = money(p.debt_left_at_purchase)
-
-    if debt.months_to_buy is not None and deposit.months_to_buy is not None:
-        gap = debt.months_to_buy - deposit.months_to_buy
-        f["Faster path"] = ("same timing" if gap == 0 else
-                            f"{'deposit first' if gap > 0 else 'debt first'} by {months(abs(gap))}")
-    saved = deposit.total_debt_interest - debt.total_debt_interest
-    f["Interest difference"] = (f"debt first saves {money(saved)}" if saved >= 0 else
-                                f"deposit first saves {money(-saved)}")
-    return f
-
-
-# ---------- 2. The decision ----------
-
-SYSTEM_PROMPT = """You are the explainer in an educational tool about renting vs. buying a home.
+SYSTEM_PROMPT = f"""You are the explainer in an educational tool about renting vs. buying a home.
 You are not a financial adviser, and the renters are fictional.
 
-For the renter in the fact sheet, make exactly one judgment: should they pay down debt first
-("debt_first") or save for the deposit first ("deposit_first")?
+Your job: decide whether one renter should pay down debt first ("debt_first") or save for the
+deposit first ("deposit_first"), then call submit_decision.
 
-Rules:
-- Every number has already been calculated. Use only numbers that appear in the fact sheet,
-  written exactly as they appear there (same digits, same decimals, same $ or %).
+How to work:
+- You start with no numbers. Get them with the tools: get_renter_summary, project_debt_first,
+  project_deposit_first, and check_dti.
+- You have at most {MAX_STEPS} turns, so request every tool you need at once (several tool
+  calls in one turn is fine). Call submit_decision on its own, after you've read the results.
+
+Rules for the explanation:
+- Every number has already been calculated by the tools. Use only numbers from the tool
+  results, written exactly as they appear (same digits, same decimals, same $ or %).
 - Never calculate, add, subtract, round, estimate, or convert a number yourself. If you want a
-  comparison the fact sheet doesn't give as a number, describe it in words without a number.
+  comparison the tools don't give as a number, describe it in words without a number.
 - Weigh the interest rates, how each path changes DTI and timing, the renter's goal, and how
   steady their income is.
-- Explain in 2 to 4 plain-English sentences, about the renter in the third person. Cite the
-  specific numbers that drove the decision. Generic advice like "pay down high-interest debt
-  first" is not enough on its own.
+- 2 to 4 plain-English sentences, about the renter in the third person, citing the specific
+  numbers that drove the decision. Generic advice is not enough on its own.
 - If it's a close call, say so and name the trade-off."""
 
-RESPONSE_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "decision": {"type": "STRING", "enum": list(DECISIONS)},
-        "explanation": {"type": "STRING"},
-    },
-    "required": ["decision", "explanation"],
-}
+
+# ---------- Talking to Gemini ----------
+
+@dataclass
+class ToolCall:
+    name: str
+    args: dict
+
+
+@dataclass
+class ModelTurn:
+    """What the model said in one step: tool calls and/or text."""
+    calls: list
+    text: str = ""
+    raw: object = None   # the model's original message, sent back as-is in the history
 
 
 def make_client():
     from google import genai
     load_dotenv()
-    return genai.Client(api_key=os.getenv("GEMINI_API_KEY", "").strip())
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        raise KeyError("GEMINI_API_KEY is missing")
+    return genai.Client(api_key=key)
 
 
-def ask_gemini(client, facts, model):
+def _to_gemini(messages, model):
+    """Turn our conversation into Gemini's format.
+
+    A model's own earlier turns are sent back exactly as it wrote them (they carry hidden
+    "thought signatures" Gemini requires). If a backup model took over mid-run, the earlier
+    model's tool calls and results are retold as plain text, which any model accepts.
+    """
+    from google.genai import types
+
+    def text(role, s):
+        return types.Content(role=role, parts=[types.Part.from_text(text=s)])
+
+    contents, retold = [], False
+    for m in messages:
+        if m["role"] == "user":
+            contents.append(text("user", m["text"]))
+        elif m["role"] == "model":
+            retold = not (m.get("raw") is not None and m.get("model") == model)
+            if not retold:
+                contents.append(m["raw"])
+                continue
+            requested = "; ".join(f"{c.name}({json.dumps(c.args)})" for c in m["calls"])
+            contents.append(text("model", " ".join(filter(None, [
+                m.get("text"), f"I requested these tools: {requested}." if requested else ""]))
+                or "(no reply)"))
+        elif m["role"] == "tool":
+            if retold:
+                contents.append(text("user", "Tool results:\n" + json.dumps(
+                    [{"tool": name, "result": result} for name, result in m["results"]], indent=1)))
+            else:
+                contents.append(types.Content(role="user", parts=[
+                    types.Part.from_function_response(name=name, response=result)
+                    for name, result in m["results"]]))
+    return contents
+
+
+def ask_gemini(client, messages, model):
+    """One step: send the whole conversation, get back the model's next turn."""
     from google.genai import types
     response = client.models.generate_content(
-        model=model,
-        contents="Fact sheet:\n" + "\n".join(f"- {k}: {v}" for k, v in facts.items()),
+        model=model, contents=_to_gemini(messages, model),
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT, temperature=TEMPERATURE,
-            response_mime_type="application/json", response_schema=RESPONSE_SCHEMA,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)),
-    )
-    return response.text
+            tools=[types.Tool(function_declarations=TOOL_DECLARATIONS)],
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)))
+    if not response.candidates or response.candidates[0].content is None:
+        raise ValueError("empty response")
+    content = response.candidates[0].content
+    calls = [ToolCall(fc.name, dict(fc.args or {})) for fc in (response.function_calls or [])]
+    text = " ".join(p.text for p in (content.parts or []) if p.text and not p.thought).strip()
+    return ModelTurn(calls, text, content)
 
+
+# ---------- The result ----------
 
 @dataclass
 class Advice:
-    decision: str | None          # "debt_first", "deposit_first", or None if unavailable
-    explanation: str
-    mismatches: list = field(default_factory=list)   # numbers cited that aren't on the sheet
-    model: str | None = None      # which model answered
-    error: str | None = None
+    status: str                       # "decided", "no_decision", or "unavailable"
+    decision: str | None = None       # "debt_first" / "deposit_first", only when decided
+    explanation: str = ""
+    mismatches: list = field(default_factory=list)   # cited numbers no tool returned
+    model: str | None = None          # model that made the final call
+    message: str = ""                 # what to show when there is no decision
+    reason: str | None = None         # technical detail behind the message
+    steps: list = field(default_factory=list)        # printable step log
+    tool_results: list = field(default_factory=list)  # every tool result from the run
 
 
-RETRIES_PER_MODEL = 2     # attempts per model when Google is temporarily busy
-RETRY_WAIT_SECONDS = 2
-TRANSIENT_CODES = {429, 500, 502, 503, 504}   # rate-limited or overloaded: worth retrying
+def is_key_error(e):
+    code = getattr(e, "code", None)
+    return code in KEY_ERROR_CODES or (code == 400 and "api key" in str(e).lower())
 
 
-def parse_reply(text):
-    reply = json.loads(text)
-    decision, explanation = reply["decision"], reply["explanation"].strip()
-    if decision not in DECISIONS or not explanation:
-        raise ValueError(f"unusable reply: decision={decision!r}")
-    return decision, explanation
+class Unavailable(Exception):
+    pass
 
 
-def decide(facts, client=None, ask=ask_gemini, models=GEMINI_MODELS, sleep=time.sleep):
-    """Ask the model for its one decision, then check its numbers. Never raises.
+def ask_with_fallback(ask, client, messages, models, start, sleep):
+    """Ask the current model; retry 429/500, move to the next model on other errors,
+    stop immediately on a rejected key. Returns (turn, index of the model that answered)."""
+    last = "no models configured"
+    for i in range(start, len(models)):
+        for attempt in range(RETRIES_PER_MODEL):
+            try:
+                return ask(client, messages, models[i]), i
+            except Exception as e:
+                if is_key_error(e):
+                    raise Unavailable(f"API key rejected ({getattr(e, 'code', '?')})")
+                code = getattr(e, "code", None)
+                last = f"{type(e).__name__}{f' {code}' if code else ''}"
+                if code not in RETRY_CODES:
+                    break                   # this model won't work; try the next one
+                if attempt < RETRIES_PER_MODEL - 1:
+                    sleep(RETRY_WAIT_SECONDS)
+    raise Unavailable(f"all models failed (last error: {last})")
 
-    Tries each model in turn (with a short retry for temporary errors) and returns
-    the first usable answer.
-    """
-    last_error = "no models configured"
+
+# ---------- The bounded loop ----------
+
+def decide(renter, rate, client=None, ask=ask_gemini, models=GEMINI_MODELS,
+           max_steps=MAX_STEPS, sleep=time.sleep, log=print, analysis=None):
+    """Run the tool loop for one renter. Never raises and never guesses a decision."""
+    tools = RenterTools(renter, rate, analysis)
+    advice = Advice(status="no_decision")
+
+    def note(line):
+        advice.steps.append(line)
+        log(line)
+
     try:
         client = client or make_client()
     except Exception as e:
-        return Advice(None, "", error=f"AI explanation unavailable ({type(e).__name__}).")
-    for model in models:
-        for attempt in range(RETRIES_PER_MODEL):
-            try:
-                decision, explanation = parse_reply(ask(client, facts, model))
-                return Advice(decision, explanation, check_numbers(explanation, facts), model)
-            except Exception as e:
-                code = getattr(e, "code", None)
-                last_error = f"{type(e).__name__}{f' {code}' if code else ''}"
-                if code not in TRANSIENT_CODES:
-                    break                        # this model won't work; try the next one
-                if attempt < RETRIES_PER_MODEL - 1:
-                    sleep(RETRY_WAIT_SECONDS)
-    return Advice(None, "", error=f"AI explanation unavailable right now ({last_error}).")
+        return _unavailable(advice, note, f"no Gemini client ({type(e).__name__})")
+
+    messages = [{"role": "user", "text": f"Decide for renter_id '{renter.id}' ({renter.name})."}]
+    model_index, data_seen = 0, False
+    for step in range(1, max_steps + 1):
+        try:
+            turn, model_index = ask_with_fallback(ask, client, messages, models, model_index, sleep)
+        except Unavailable as e:
+            return _unavailable(advice, note, str(e))
+        messages.append({"role": "model", "calls": turn.calls, "text": turn.text,
+                         "raw": turn.raw, "model": models[model_index]})
+
+        if not turn.calls:
+            note(f"Step {step} -> no tool chosen (model replied with text); reminded it to use the tools")
+            messages.append({"role": "user", "text": "Use the tools, then call submit_decision."})
+            continue
+
+        results = []
+        for n, call in enumerate(turn.calls):
+            prefix = f"Step {step} -> " if n == 0 else " " * len(f"Step {step} ") + "-> "
+            if call.name == "submit_decision":
+                problem = _submit_problem(call, alone=len(turn.calls) == 1, data_seen=data_seen)
+                if problem is None:
+                    note(f"{prefix}submit_decision: {STRATEGY_NAMES[call.args['decision']]}")
+                    advice.status, advice.model = "decided", models[model_index]
+                    advice.decision = call.args["decision"]
+                    advice.explanation = call.args["explanation"].strip()
+                    advice.mismatches = check_numbers(advice.explanation, advice.tool_results)
+                    return advice
+                result, summary = {"error": problem}, f"rejected: {problem}"
+            else:
+                result, summary = tools.run(call.name, call.args)
+                if "error" not in result:
+                    data_seen = True
+                    advice.tool_results.append(result)
+            args = ", ".join(str(call.args[k]) for k in ("renter_id", "scenario") if k in call.args)
+            note(f"{prefix}{call.name}({args}): {summary}")
+            results.append((call.name, result))
+        messages.append({"role": "tool", "results": results})
+
+    advice.message = f"No decision reached after {max_steps} steps"
+    note(advice.message)
+    return advice
 
 
-# ---------- 3. Number check ----------
+def _submit_problem(call, alone, data_seen):
+    """Why a submit_decision call can't be accepted, or None if it's fine."""
+    if not alone:
+        return "Call submit_decision on its own, after reading the other tool results."
+    if not data_seen:
+        return "Get the numbers from the tools before submitting a decision."
+    if call.args.get("decision") not in DECISIONS:
+        return f"decision must be one of {', '.join(DECISIONS)}."
+    if not str(call.args.get("explanation", "")).strip():
+        return "explanation is empty."
+    return None
+
+
+def _unavailable(advice, note, reason):
+    advice.status, advice.message, advice.reason = "unavailable", UNAVAILABLE, reason
+    note(f"{UNAVAILABLE} ({reason})")
+    return advice
+
+
+# ---------- Number check ----------
 
 NUMBER = re.compile(
     r"(?<![\w.])(\$)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?"
@@ -221,14 +286,26 @@ def find_numbers(text):
     return found
 
 
-def check_numbers(explanation, facts):
-    """Numbers in the explanation that don't match any number on the fact sheet.
+def _values(obj):
+    """Every string value inside nested tool results."""
+    if isinstance(obj, dict):
+        for v in obj.values():
+            yield from _values(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _values(v)
+    else:
+        yield str(obj)
 
-    A cited number matches a fact only if the units agree and the values are exactly equal.
+
+def check_numbers(explanation, sources):
+    """Numbers in the explanation that don't match any number the tools returned.
+
+    A cited number matches only if the units agree and the values are exactly equal.
     "31%" matches "31.0%" (same number), but "27%" does not match "26.99%" and "$6,400"
     does not match "$6,364" -- rounding is math the model isn't allowed to do.
     """
-    known = [n for value in facts.values() for n in find_numbers(str(value))]
+    known = [n for value in _values(sources) for n in find_numbers(value)]
     mismatches = []
     for cited in find_numbers(explanation):
         ok = any((cited.unit is None or cited.unit == k.unit)
@@ -239,20 +316,24 @@ def check_numbers(explanation, facts):
 
 
 if __name__ == "__main__":
-    from finance import Assumptions
     from rates import get_mortgage_rate
-    from renters import analyze, load_renters
+    from renters import load_renters
 
     rate = get_mortgage_rate()
-    client = make_client()
-    print(f"Mortgage rate {rate.rate:.2%} as of {rate.as_of} | models {', '.join(GEMINI_MODELS)}\n")
+    client = None
+    try:
+        client = make_client()
+    except Exception:
+        pass   # decide() reports "AI explanation unavailable"
+    print(f"Mortgage rate {rate.rate:.2%} as of {rate.as_of} | models {', '.join(GEMINI_MODELS)} "
+          f"| max {MAX_STEPS} steps\n")
     for r in load_renters():
-        facts = fact_sheet(r, analyze(r, Assumptions(interest_rate=rate.rate)), rate)
-        advice = decide(facts, client)
-        if advice.error:
-            print(f"=== {r.name}: {advice.error}\n")
+        print(f"=== {r.name}")
+        advice = decide(r, rate, client)
+        if advice.status != "decided":
+            print(f"    Result: {advice.message}\n")
             continue
-        check = ("all numbers match the fact sheet" if not advice.mismatches
+        check = ("all numbers match the tool results" if not advice.mismatches
                  else "MISMATCH: " + ", ".join(advice.mismatches))
-        print(f"=== {r.name}: {advice.decision}  (answered by {advice.model})\n"
-              f"    {advice.explanation}\n    Number check: {check}\n")
+        print(f"    Decision: {STRATEGY_NAMES[advice.decision]}  (by {advice.model}, "
+              f"{len(advice.steps)} step lines)\n    {advice.explanation}\n    Number check: {check}\n")
