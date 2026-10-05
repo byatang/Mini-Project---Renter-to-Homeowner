@@ -48,6 +48,21 @@ def test_filter_and_affordability(raw):
     assert flagged.loc["76104", "gap"] == 0
 
 
+def test_tidy_locations_keeps_our_zips_and_fixes_headers():
+    raw = pd.DataFrame({"GEOID": ["75001", "1001", "90210"], "ALAND": [1, 2, 3],
+                        "INTPTLAT": [32.96, 42.06, 34.10],
+                        "INTPTLONG                                                  ": [-96.84, -72.62, -118.41]})
+    df = hv.tidy_locations(raw, ["75001", "01001"])
+    assert df.to_dict("records") == [{"zip": "01001", "lat": 42.06, "lon": -72.62},
+                                     {"zip": "75001", "lat": 32.96, "lon": -96.84}]
+
+
+def test_every_saved_zip_has_a_map_location_in_dfw():
+    df = hv.load()
+    assert df["lat"].notna().all() and df["lon"].notna().all()
+    assert df["lat"].between(31.5, 34).all() and df["lon"].between(-98.5, -95.5).all()
+
+
 def test_saved_data_file_looks_right():
     df = hv.load()
     assert len(df) > 200
