@@ -5,6 +5,9 @@ and returns them pre-formatted ("21 months", "$6,364", "45.6%"). The model never
 arithmetic: even the differences between the two paths are calculated here.
 """
 
+import hashlib
+import json
+
 from finance import SAVINGS_APY, Assumptions
 from renters import analyze
 
@@ -197,6 +200,17 @@ class RenterTools:
              "Within limits": self._yes(front, back)}
         verdict = "within limits" if f["Within limits"] == "yes" else "over the limit"
         return f, f"{scenario}: total DTI {f['Total DTI']} vs {f['Total DTI limit']} -> {verdict}"
+
+    def fingerprint(self):
+        """Short code for every number the tools could return for this renter.
+
+        Two runs have the same fingerprint only if every tool result would be identical,
+        so a saved answer is reused only when the renter's numbers haven't changed.
+        """
+        calls = [(t, {"renter_id": self.renter.id}) for t in DATA_TOOLS if t != "check_dti"]
+        calls += [("check_dti", {"renter_id": self.renter.id, "scenario": s}) for s in SCENARIOS]
+        everything = [self.run(name, args)[0] for name, args in calls]
+        return hashlib.sha256(json.dumps(everything, sort_keys=True).encode()).hexdigest()[:16]
 
     def _yes(self, front, back):
         lim = self.x["limits"]

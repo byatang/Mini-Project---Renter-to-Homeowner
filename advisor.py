@@ -52,6 +52,7 @@ How to work:
 Rules for the explanation:
 - Every number has already been calculated by the tools. Use only numbers from the tool
   results, written exactly as they appear (same digits, same decimals, same $ or %).
+- Always write the unit with every number: "13 months", not "13"; "$1,317", not "1,317".
 - Never calculate, add, subtract, round, estimate, or convert a number yourself. If you want a
   comparison the tools don't give as a number, describe it in words without a number.
 - Weigh the interest rates, how each path changes DTI and timing, the renter's goal, and how
