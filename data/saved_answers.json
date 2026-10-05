@@ -1,0 +1,394 @@
+{
+ "maya": {
+  "fingerprint": "918ba51f3c4f3ed8",
+  "saved_at": "2026-10-02 15:10",
+  "decision": "debt_first",
+  "explanation": "With a steady salaried income, Maya currently cannot qualify to buy because her Total DTI today of 46.1% exceeds the Total DTI limit of 43.0%, driven by debt that includes a Credit card balance of $15,000 at a 26.99% APR. Prioritizing debt first directly fulfills her goal to buy a home as soon as possible, bringing her Total DTI at purchase down to 39.2% and allowing her to purchase in 21 months, which is faster by 20 months compared to 41 months under deposit first. Additionally, the debt-first path results in total interest on today's debts of $6,364 rather than $16,089, meaning debt first saves $9,726.",
+  "model": "gemini-3.8-flash",
+  "steps": [
+   "Step 1 -> get_renter_summary(maya): Maya, salaried income, lender counts $6,500/mo; total DTI 46.1% vs 43.0% limit",
+   "       -> project_debt_first(maya): buys in 21 months; $6,364 interest; DTI at purchase 39.2%",
+   "       -> project_deposit_first(maya): buys in 41 months; $16,089 interest; DTI at purchase 35.3%",
+   "       -> check_dti(maya, today): today: total DTI 46.1% vs 43.0% -> over the limit",
+   "       -> check_dti(maya, debt_first): debt_first: total DTI 39.2% vs 43.0% -> within limits",
+   "       -> check_dti(maya, deposit_first): deposit_first: total DTI 35.3% vs 43.0% -> within limits",
+   "Step 2 -> submit_decision: debt first"
+  ],
+  "tool_results": [
+   {
+    "Renter": "Maya",
+    "Story": "Dental hygienist in Fort Worth. Carries a credit card balance from a move and a medical bill, plus a car loan.",
+    "Goal": "Buy a home as soon as possible",
+    "Income type": "Salaried (steady paycheck)",
+    "Monthly income the lender counts": "$6,500",
+    "Savings today": "$9,000",
+    "Extra cash available each month": "$600",
+    "Credit card balance": "$15,000",
+    "Credit card interest rate (APR)": "26.99%",
+    "Credit card monthly payment": "$450",
+    "Car loan balance": "$25,000",
+    "Car loan interest rate (APR)": "6.90%",
+    "Car loan monthly payment": "$700",
+    "Savings account yield (what the deposit fund earns)": "3.50%",
+    "Gap between Credit card APR and savings yield": "23.49 percentage points",
+    "Target home price": "$190,000",
+    "Loan program and down payment": "FHA, 3.5% down",
+    "Mortgage rate": "7.28% (Freddie Mac 30-year fixed average, via FRED, as of 2026-10-01)",
+    "Monthly housing cost": "$1,845",
+    "Cash needed to close (deposit + closing costs)": "$12,350",
+    "Housing-only DTI today": "28.4%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI today": "46.1%",
+    "Total DTI limit": "43.0%",
+    "Qualifies on DTI today": "no"
+   },
+   {
+    "Strategy": "debt first",
+    "How extra cash is used": "to the highest-APR debt until it is paid off, then to savings",
+    "Time until they can buy": "21 months",
+    "Savings at purchase": "$13,332",
+    "Debt still owed at purchase": "$12,622",
+    "Total DTI at purchase": "39.2%",
+    "Total interest on today's debts": "$6,364",
+    "Checkpoints": [
+     "after 3 months: savings $9,079, debt owed $36,135",
+     "after 6 months: savings $9,159, debt owed $32,091",
+     "after 9 months: savings $9,239, debt owed $27,855",
+     "after 12 months: savings $9,320, debt owed $23,417",
+     "after 15 months: savings $9,402, debt owed $18,764",
+     "after 18 months: savings $10,085, debt owed $14,483",
+     "after 21 months: savings $13,332, debt owed $12,622 (can buy)"
+    ],
+    "Timing compared with deposit first": "debt first is faster by 20 months",
+    "Interest compared with deposit first": "debt first saves $9,726"
+   },
+   {
+    "Strategy": "deposit first",
+    "How extra cash is used": "to savings for the deposit",
+    "Time until they can buy": "41 months",
+    "Savings at purchase": "$36,869",
+    "Debt still owed at purchase": "$7,543",
+    "Total DTI at purchase": "35.3%",
+    "Total interest on today's debts": "$16,089",
+    "Checkpoints": [
+     "after 3 months: savings $10,884, debt owed $37,976",
+     "after 6 months: savings $12,785, debt owed $35,899",
+     "after 9 months: savings $14,702, debt owed $33,767",
+     "after 12 months: savings $16,637, debt owed $31,578",
+     "after 15 months: savings $18,588, debt owed $29,329",
+     "after 18 months: savings $20,556, debt owed $27,017",
+     "after 21 months: savings $22,542, debt owed $24,641",
+     "after 24 months: savings $24,545, debt owed $22,196",
+     "after 27 months: savings $26,566, debt owed $19,681",
+     "after 30 months: savings $28,604, debt owed $17,092",
+     "after 33 months: savings $30,660, debt owed $14,425",
+     "after 36 months: savings $32,735, debt owed $11,677",
+     "after 39 months: savings $34,827, debt owed $8,845",
+     "after 41 months: savings $36,869, debt owed $7,543 (can buy)"
+    ],
+    "Timing compared with debt first": "deposit first is slower by 20 months",
+    "Interest compared with debt first": "deposit first costs $9,726 more"
+   },
+   {
+    "When": "today",
+    "Housing-only DTI": "28.4%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI": "46.1%",
+    "Total DTI limit": "43.0%",
+    "Within limits": "no"
+   },
+   {
+    "When": "at purchase with debt first",
+    "Housing-only DTI": "28.4%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI": "39.2%",
+    "Total DTI limit": "43.0%",
+    "Within limits": "yes"
+   },
+   {
+    "When": "at purchase with deposit first",
+    "Housing-only DTI": "28.4%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI": "35.3%",
+    "Total DTI limit": "43.0%",
+    "Within limits": "yes"
+   }
+  ]
+ },
+ "marcus": {
+  "fingerprint": "ec7b3885d0599c52",
+  "saved_at": "2026-10-02 15:16",
+  "decision": "debt_first",
+  "explanation": "Marcus should prioritize paying down his debt first because it results in a lower total DTI of 31.7% at purchase compared to 33.3% with the deposit-first strategy, aligning with his goal to buy on the strongest terms. Although this approach takes 16 months instead of 13, it saves him $1,317 in total interest on his debts.",
+  "model": "gemini-3.1-flash-lite",
+  "steps": [
+   "Step 1 -> get_renter_summary(marcus): Marcus, variable income, lender counts $6,000/mo; total DTI 33.3% vs 43.0% limit",
+   "       -> project_debt_first(marcus): buys in 16 months; $5,443 interest; DTI at purchase 31.7%",
+   "       -> project_deposit_first(marcus): buys in 13 months; $6,759 interest; DTI at purchase 33.3%",
+   "       -> check_dti(marcus, today): today: total DTI 33.3% vs 43.0% -> within limits",
+   "       -> check_dti(marcus, debt_first): debt_first: total DTI 31.7% vs 43.0% -> within limits",
+   "       -> check_dti(marcus, deposit_first): deposit_first: total DTI 33.3% vs 43.0% -> within limits",
+   "Step 2 -> submit_decision: debt first"
+  ],
+  "tool_results": [
+   {
+    "Renter": "Marcus",
+    "Story": "Freelance video editor in Dallas. Income dipped this year after a big client left.",
+    "Goal": "Buy on the strongest terms (lower DTI), even if it takes longer",
+    "Income type": "Variable (commission or freelance; the lender averages the last two years, or uses the current year if income is falling)",
+    "Monthly income the lender counts": "$6,000",
+    "Income trend": "falling this year",
+    "Savings today": "$5,000",
+    "Extra cash available each month": "$500",
+    "Credit card balance": "$3,200",
+    "Credit card interest rate (APR)": "19.90%",
+    "Credit card monthly payment": "$96",
+    "Student loan balance": "$18,000",
+    "Student loan interest rate (APR)": "5.50%",
+    "Student loan monthly payment": "$200",
+    "Savings account yield (what the deposit fund earns)": "3.50%",
+    "Gap between Credit card APR and savings yield": "16.40 percentage points",
+    "Target home price": "$175,000",
+    "Loan program and down payment": "FHA, 3.5% down",
+    "Mortgage rate": "7.28% (Freddie Mac 30-year fixed average, via FRED, as of 2026-10-01)",
+    "Monthly housing cost": "$1,700",
+    "Cash needed to close (deposit + closing costs)": "$11,375",
+    "Housing-only DTI today": "28.3%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI today": "33.3%",
+    "Total DTI limit": "43.0%",
+    "Qualifies on DTI today": "yes"
+   },
+   {
+    "Strategy": "debt first",
+    "How extra cash is used": "to the highest-APR debt until it is paid off, then to savings",
+    "Time until they can buy": "16 months",
+    "Savings at purchase": "$11,479",
+    "Debt still owed at purchase": "$16,054",
+    "Total DTI at purchase": "31.7%",
+    "Total interest on today's debts": "$5,443",
+    "Checkpoints": [
+     "after 3 months: savings $5,044, debt owed $19,190",
+     "after 6 months: savings $5,284, debt owed $17,287",
+     "after 9 months: savings $7,123, debt owed $16,923",
+     "after 12 months: savings $8,979, debt owed $16,554",
+     "after 15 months: savings $10,851, debt owed $16,180",
+     "after 16 months: savings $11,479, debt owed $16,054 (can buy)"
+    ],
+    "Timing compared with deposit first": "debt first is slower by 3 months",
+    "Interest compared with deposit first": "debt first saves $1,317"
+   },
+   {
+    "Strategy": "deposit first",
+    "How extra cash is used": "to savings for the deposit",
+    "Time until they can buy": "13 months",
+    "Savings at purchase": "$11,808",
+    "Debt still owed at purchase": "$19,013",
+    "Total DTI at purchase": "33.3%",
+    "Total interest on today's debts": "$6,759",
+    "Checkpoints": [
+     "after 3 months: savings $6,548, debt owed $20,715",
+     "after 6 months: savings $8,110, debt owed $20,218",
+     "after 9 months: savings $9,686, debt owed $19,710",
+     "after 12 months: savings $11,275, debt owed $19,189",
+     "after 13 months: savings $11,808, debt owed $19,013 (can buy)"
+    ],
+    "Timing compared with debt first": "deposit first is faster by 3 months",
+    "Interest compared with debt first": "deposit first costs $1,317 more"
+   },
+   {
+    "When": "today",
+    "Housing-only DTI": "28.3%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI": "33.3%",
+    "Total DTI limit": "43.0%",
+    "Within limits": "yes"
+   },
+   {
+    "When": "at purchase with debt first",
+    "Housing-only DTI": "28.3%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI": "31.7%",
+    "Total DTI limit": "43.0%",
+    "Within limits": "yes"
+   },
+   {
+    "When": "at purchase with deposit first",
+    "Housing-only DTI": "28.3%",
+    "Housing-only DTI limit": "31.0%",
+    "Total DTI": "33.3%",
+    "Total DTI limit": "43.0%",
+    "Within limits": "yes"
+   }
+  ]
+ },
+ "jordan": {
+  "fingerprint": "f44f607b2369e873",
+  "saved_at": "2026-10-02 15:25",
+  "decision": "deposit_first",
+  "explanation": "Jordan's goal is to buy a home as soon as possible, and the deposit_first strategy allows them to buy in 3 months, which is 26 months faster than the debt_first strategy. While deposit_first costs $6,115 more in interest, Jordan already qualifies for a mortgage with a total DTI of 29.7%, which is well within the 36.0% limit. Prioritizing the deposit allows Jordan to reach their goal significantly sooner while remaining within lender requirements.",
+  "model": "gemini-3.1-flash-lite",
+  "steps": [
+   "Step 1 -> get_renter_summary(jordan): Jordan, salaried income, lender counts $7,917/mo; total DTI 29.7% vs 36.0% limit",
+   "       -> project_debt_first(jordan): buys in 29 months; $1,734 interest; DTI at purchase 25.6%",
+   "       -> project_deposit_first(jordan): buys in 3 months; $7,849 interest; DTI at purchase 29.7%",
+   "       -> check_dti(jordan, today): today: total DTI 29.7% vs 36.0% -> within limits",
+   "Step 2 -> submit_decision: deposit first"
+  ],
+  "tool_results": [
+   {
+    "Renter": "Jordan",
+    "Story": "Software QA analyst in Garland. Only debt is a low-rate federal student loan.",
+    "Goal": "Buy a home as soon as possible",
+    "Income type": "Salaried (steady paycheck)",
+    "Monthly income the lender counts": "$7,917",
+    "Savings today": "$14,000",
+    "Extra cash available each month": "$900",
+    "Student loan balance": "$32,000",
+    "Student loan interest rate (APR)": "4.50%",
+    "Student loan monthly payment": "$330",
+    "Savings account yield (what the deposit fund earns)": "3.50%",
+    "Gap between Student loan APR and savings yield": "1.00 percentage points",
+    "Target home price": "$210,000",
+    "Loan program and down payment": "Conventional, 5.0% down",
+    "Mortgage rate": "7.28% (Freddie Mac 30-year fixed average, via FRED, as of 2026-10-01)",
+    "Monthly housing cost": "$2,025",
+    "Cash needed to close (deposit + closing costs)": "$16,800",
+    "Housing-only DTI today": "25.6%",
+    "Housing-only DTI limit": "28.0%",
+    "Total DTI today": "29.7%",
+    "Total DTI limit": "36.0%",
+    "Qualifies on DTI today": "yes"
+   },
+   {
+    "Strategy": "debt first",
+    "How extra cash is used": "to the highest-APR debt until it is paid off, then to savings",
+    "Time until they can buy": "29 months",
+    "Savings at purchase": "$17,172",
+    "Debt still owed at purchase": "$0",
+    "Total DTI at purchase": "25.6%",
+    "Total interest on today's debts": "$1,734",
+    "Checkpoints": [
+     "after 3 months: savings $14,123, debt owed $28,657",
+     "after 6 months: savings $14,247, debt owed $25,277",
+     "after 9 months: savings $14,372, debt owed $21,859",
+     "after 12 months: savings $14,498, debt owed $18,402",
+     "after 15 months: savings $14,625, debt owed $14,906",
+     "after 18 months: savings $14,754, debt owed $11,370",
+     "after 21 months: savings $14,883, debt owed $7,795",
+     "after 24 months: savings $15,014, debt owed $4,179",
+     "after 27 months: savings $15,145, debt owed $522",
+     "after 29 months: savings $17,172, debt owed $0 (can buy)"
+    ],
+    "Timing compared with deposit first": "debt first is slower by 26 months",
+    "Interest compared with deposit first": "debt first saves $6,115"
+   },
+   {
+    "Strategy": "deposit first",
+    "How extra cash is used": "to savings for the deposit",
+    "Time until they can buy": "3 months",
+    "Savings at purchase": "$16,831",
+    "Debt still owed at purchase": "$31,368",
+    "Total DTI at purchase": "29.7%",
+    "Total interest on today's debts": "$7,849",
+    "Checkpoints": [
+     "after 3 months: savings $16,831, debt owed $31,368 (can buy)"
+    ],
+    "Timing compared with debt first": "deposit first is faster by 26 months",
+    "Interest compared with debt first": "deposit first costs $6,115 more"
+   },
+   {
+    "When": "today",
+    "Housing-only DTI": "25.6%",
+    "Housing-only DTI limit": "28.0%",
+    "Total DTI": "29.7%",
+    "Total DTI limit": "36.0%",
+    "Within limits": "yes"
+   }
+  ]
+ },
+ "priya": {
+  "fingerprint": "ac40001c8d7a7d6a",
+  "saved_at": "2026-10-04 19:37",
+  "decision": "debt_first",
+  "explanation": "Priya's goal is to buy on the strongest terms, and paying off her car loan first results in a total DTI of 26.1% at purchase, compared to 31.1% if she prioritizes the deposit. While this strategy takes 17 months to reach her goal\u20149 months longer than the deposit-first approach\u2014it saves her $994 in interest and eliminates her debt entirely before she buys. This aligns with her preference for stronger financial terms given her variable income.",
+  "model": "gemini-3.1-flash-lite",
+  "steps": [
+   "Step 1 -> get_renter_summary(priya): Priya, variable income, lender counts $7,583/mo; total DTI 31.1% vs 36.0% limit",
+   "       -> project_debt_first(priya): buys in 17 months; $503 interest; DTI at purchase 26.1%",
+   "       -> project_deposit_first(priya): buys in 8 months; $1,497 interest; DTI at purchase 31.1%",
+   "       -> check_dti(priya, today): today: total DTI 31.1% vs 36.0% -> within limits",
+   "Step 2 -> submit_decision: debt first"
+  ],
+  "tool_results": [
+   {
+    "Renter": "Priya",
+    "Story": "Commission-based real estate agent in Arlington. Income is rising but varies month to month.",
+    "Goal": "Buy on the strongest terms (lower DTI), even if it takes longer",
+    "Income type": "Variable (commission or freelance; the lender averages the last two years, or uses the current year if income is falling)",
+    "Monthly income the lender counts": "$7,583",
+    "Income trend": "rising this year",
+    "Savings today": "$11,000",
+    "Extra cash available each month": "$700",
+    "Car loan balance": "$12,000",
+    "Car loan interest rate (APR)": "7.90%",
+    "Car loan monthly payment": "$380",
+    "Savings account yield (what the deposit fund earns)": "3.50%",
+    "Gap between Car loan APR and savings yield": "4.40 percentage points",
+    "Target home price": "$205,000",
+    "Loan program and down payment": "Conventional, 5.0% down",
+    "Mortgage rate": "7.28% (Freddie Mac 30-year fixed average, via FRED, as of 2026-10-01)",
+    "Monthly housing cost": "$1,977",
+    "Cash needed to close (deposit + closing costs)": "$16,400",
+    "Housing-only DTI today": "26.1%",
+    "Housing-only DTI limit": "28.0%",
+    "Total DTI today": "31.1%",
+    "Total DTI limit": "36.0%",
+    "Qualifies on DTI today": "yes"
+   },
+   {
+    "Strategy": "debt first",
+    "How extra cash is used": "to the highest-APR debt until it is paid off, then to savings",
+    "Time until they can buy": "17 months",
+    "Savings at purchase": "$17,453",
+    "Debt still owed at purchase": "$0",
+    "Total DTI at purchase": "26.1%",
+    "Total interest on today's debts": "$503",
+    "Checkpoints": [
+     "after 3 months: savings $11,097, debt owed $8,977",
+     "after 6 months: savings $11,194, debt owed $5,894",
+     "after 9 months: savings $11,292, debt owed $2,750",
+     "after 12 months: savings $11,848, debt owed $0",
+     "after 15 months: savings $15,201, debt owed $0",
+     "after 17 months: savings $17,453, debt owed $0 (can buy)"
+    ],
+    "Timing compared with deposit first": "debt first is slower by 9 months",
+    "Interest compared with deposit first": "debt first saves $994"
+   },
+   {
+    "Strategy": "deposit first",
+    "How extra cash is used": "to savings for the deposit",
+    "Time until they can buy": "8 months",
+    "Savings at purchase": "$16,917",
+    "Debt still owed at purchase": "$9,536",
+    "Total DTI at purchase": "31.1%",
+    "Total interest on today's debts": "$1,497",
+    "Checkpoints": [
+     "after 3 months: savings $13,203, debt owed $11,091",
+     "after 6 months: savings $15,425, debt owed $10,164",
+     "after 8 months: savings $16,917, debt owed $9,536 (can buy)"
+    ],
+    "Timing compared with debt first": "deposit first is faster by 9 months",
+    "Interest compared with debt first": "deposit first costs $994 more"
+   },
+   {
+    "When": "today",
+    "Housing-only DTI": "26.1%",
+    "Housing-only DTI limit": "28.0%",
+    "Total DTI": "31.1%",
+    "Total DTI limit": "36.0%",
+    "Within limits": "yes"
+   }
+  ]
+ }
+}
