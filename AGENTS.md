@@ -21,22 +21,10 @@ This note must always be visible on screen, word for word:
   costs more than the deposit gains you"), not generic advice.
 - A check compares every number the model cites against the values the code calculated, and
   flags any mismatch on screen. Matches must be exact (31% = 31.0%, but 27% != 26.99%).
-- The decision is a **bounded tool loop** (`advisor.decide()`): the model starts with only a
-  renter id and asks for tools in `agent_tools.py` (get_renter_summary, project_debt_first,
-  project_deposit_first, check_dti), then calls submit_decision. One step = one model call;
-  `MAX_STEPS = 6`. A decision is only accepted after results from BOTH projections (any order;
-  check_dti optional). Without a decision by the limit, the result is "No decision reached" —
-  never a guess. The number check runs against every tool result from the run, and a cited
-  number must carry the same unit as the fact (a bare "21" doesn't match "21 months").
-- The model never sees raw annual income: only the income the lender counts, plus a
-  words-only "Income trend" for variable earners.
-- Renters are validated on load: income must be positive, and debt names must be unique.
-- Tool results are pre-formatted strings; labels contain no digits, projections give quarterly
-  checkpoints (not every month), and the code pre-calculates the differences between paths.
-- Models are tried in order (`GEMINI_MODELS`). 429/500 are retried; other errors move to the
-  next model; a rejected key (401/403, or 400 "API key") stops right away. If a backup model
-  takes over mid-run, earlier steps are retold as plain text (Gemini rejects another model's
-  "thought signatures"). If all fail: "AI explanation unavailable", never a crash.
+- The model sees only `advisor.fact_sheet()`. Fact labels contain no digits, and the code
+  pre-calculates the differences between the paths so the model never subtracts.
+- Models are tried in order (`GEMINI_MODELS`); free-tier models are often overloaded (503).
+  If all fail, the app shows "AI explanation unavailable" instead of breaking.
 - Never pull credit reports (all debts come from the fictional renters file). Never scrape
   listing sites.
 
@@ -55,7 +43,6 @@ From the project folder, in the VS Code terminal (with `(.venv)` showing):
 ```
 pip install -r requirements.txt   # first time only
 python -m pytest                  # run all tests
-streamlit run app.py              # the app, at http://localhost:8501
 python demo.py                    # the four renters, printed in the terminal
 python home_values.py             # refresh DFW home values from Zillow (monthly)
 ```
@@ -65,20 +52,14 @@ python home_values.py             # refresh DFW home values from Zillow (monthly
 finance.py                    all the math; named constants at the top
 renters.py                    loads the renters, analyze() runs both paths per renter
 data/renters.json             the four fictional renters (edit here, not in code)
-agent_tools.py                the tools the model can call (wrap renters.analyze() results)
-advisor.py                    bounded tool loop -> decision -> number check (python advisor.py)
-app.py                        Streamlit app: renter cards, what-if sliders, plans, Gemini, ZIP map
-.streamlit/config.toml        app theme (Okabe-Ito blue = debt first, orange = deposit first)
-saved_answers.py              last good Gemini answer per renter, reused only on identical numbers
-data/saved_answers.json       the saved answers (what-if answers are never saved)
+advisor.py                    fact sheet -> Gemini decision -> number check (python advisor.py)
 rates.py                      live FRED mortgage rate, silent fallback to the default
 check_keys.py                 confirms the API keys work without printing them
 home_values.py                Zillow ZHVI download + DFW ZIP lookups
 data/dfw_zip_home_values.csv  254 DFW ZIPs, typical home value + 1-year change
-data/dfw_zip_locations.csv    ZIP center points for the map (Census 2024 Gazetteer)
 demo.py                       terminal walkthrough of the four renters
 test_*.py                     tests (renters are checked at every rate from 6% to 8%)
-.claude/settings.json + hooks/  project hooks: stay in project, block the key file, run tests after edits
+.Codex/settings.json + hooks/  project hooks: stay in project, block the key file, run tests after edits
 requirements.txt              Python packages
 HANDOFF.md                    what's built, what's not, next steps
 ```
@@ -93,7 +74,7 @@ with no typed-in user numbers.
 - Business analytics grad student with a real estate background, new to coding, on Windows.
 - Build **one step at a time** and explain each step in plain language.
 - At the end of each step, commit and push to GitHub (`byatang/Mini-Project---Renter-to-Homeowner`).
-- **Do not add a "Co-Authored-By: Claude" line to commit messages.**
+- **Do not add a "Co-Authored-By: Codex" line to commit messages.**
 - The project path contains spaces and `&`. Always quote it, and use `-LiteralPath` in
   PowerShell. For multi-line Python snippets, write a script file; inline `python -c` breaks
   on quotes in Windows PowerShell 5.1.

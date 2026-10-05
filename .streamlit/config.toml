@@ -1,0 +1,15 @@
+# App look: editorial, warm cream + ink + sage, with a terracotta accent.
+# Plan colors: ink = debt first, terracotta = deposit first (they differ strongly in lightness,
+# so they stay distinct for colorblind viewers).
+[theme]
+base = "light"
+primaryColor = "#B4653F"
+backgroundColor = "#F4F1EC"
+secondaryBackgroundColor = "#E7EAE4"
+textColor = "#161616"
+borderColor = "#E2DDD5"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap, sans-serif"
+headingFont = "Inter Tight:https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600&display=swap, sans-serif"
+baseRadius = "1rem"
+showWidgetBorder = true
+chartCategoricalColors = ["#161616", "#B4653F"]
